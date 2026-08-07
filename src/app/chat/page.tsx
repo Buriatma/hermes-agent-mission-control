@@ -353,65 +353,49 @@ export default function ChatPage() {
         let completed = false;
 
         if (reqId) {
+          const placeholderId = `thinking-${reqId}`;
           const replyMsg: Message = {
-            id: (Date.now() + 1).toString(),
+            id: placeholderId,
             sender: "hermes",
-            text: "Request sent to Hermes Agent. Executing on server...",
+            text: "Request sent to Hermes Agent. Executing...",
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             model: currentModel,
           };
-          let lastStatus = "";
+          updateActiveSessionMessages([...activeSession.messages, newMsg, replyMsg]);
+
           const pollStatus = async () => {
             try {
               const statusRes = await fetch(`/api/hermes/requests/${reqId}`);
               if (statusRes.ok) {
                 const data = await statusRes.json();
-                lastStatus = data.request?.status || "running";
-                updateActiveSessionMessages([
-                  ...activeSession.messages,
-                  newMsg,
-                  { ...replyMsg, text: `Processing... (${lastStatus})` },
-                ]);
+                const status = data.status || "running";
 
-                if (lastStatus === "done" || lastStatus === "completed") {
+                if (status === "done" || status === "completed") {
+                  // Fetch the actual result from stream endpoint
                   const streamRes = await fetch(`/api/hermes/requests/${reqId}/stream`);
-                  if (streamRes.ok && streamRes.body) {
-                    const reader = streamRes.body.getReader();
-                    const decoder = new TextDecoder();
-                    let resultText = "";
-                    while (true) {
-                      const { done, value } = await reader.read();
-                      if (done) break;
-                      const chunk = decoder.decode(value);
-                      const lines = chunk.split("\n\n");
-                      for (const line of lines) {
-                        if (line.trim()) {
-                          try {
-                            const parsed = JSON.parse(line);
-                            if (parsed.type === "message") resultText += parsed.content;
-                          } catch (e) {}
-                        }
-                      }
-                    }
-                    completed = true;
-                    const finalMsg: Message = { ...replyMsg, text: resultText || "Executed successfully." };
-                    updateActiveSessionMessages([...activeSession.messages, newMsg, finalMsg]);
-                    if (showVoiceMode) speakText(resultText);
+                  let resultText = "Task completed.";
+                  if (streamRes.ok) {
+                    resultText = await streamRes.text() || resultText;
                   }
-                  return;
-                } else if (lastStatus === "failed") {
-                  updateActiveSessionMessages([
-                    ...activeSession.messages,
-                    newMsg,
-                    { ...replyMsg, text: "Execution failed. Please try again." },
-                  ]);
-                  return;
+                  const finalMsg: Message = { ...replyMsg, text: resultText, id: reqId };
+                  updateActiveSessionMessages(
+                    activeSession.messages.map(m => m.id === placeholderId ? finalMsg : m)
+                  );
+                } else if (status === "failed") {
+                  const errMsg: Message = { ...replyMsg, text: "Execution failed. Please check bridge logs.", id: reqId };
+                  updateActiveSessionMessages(
+                    activeSession.messages.map(m => m.id === placeholderId ? errMsg : m)
+                  );
                 }
+                // If still running, do nothing (just wait for next poll)
               }
-            } catch (err) {}
-            setTimeout(pollStatus, 2000);
+            } catch (err) {
+              console.error("Polling error:", err);
+            }
           };
           pollStatus();
+          const pollInterval = setInterval(pollStatus, 2000);
+          // Cleanup on component unmount would go here in real app
         }
       } else {
         appendSystemMessage("Failed to dispatch to Hermes bus. Check connection.");
