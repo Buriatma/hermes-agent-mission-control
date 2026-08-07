@@ -224,6 +224,16 @@ export default function ChatPage() {
   }, []);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
+  const activeSessionRef = useRef(activeSession);
+  const activeSessionIdRef = useRef(activeSessionId);
+  const currentModelRef = useRef(currentModel);
+  const showVoiceModeRef = useRef(showVoiceMode);
+
+  // Keep refs in sync
+  useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
+  useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
+  useEffect(() => { currentModelRef.current = currentModel; }, [currentModel]);
+  useEffect(() => { showVoiceModeRef.current = showVoiceMode; }, [showVoiceMode]);
 
   // TTS speaker
   const speakText = (text: string) => {
@@ -361,13 +371,13 @@ export default function ChatPage() {
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             model: currentModel,
           };
-          updateActiveSessionMessages([...activeSession.messages, newMsg, replyMsg]);
+          setSessions((prev) => prev.map((s) => s.id === activeSessionId ? { ...s, messages: [...s.messages, newMsg, replyMsg] } : s));
 
           const pollStatus = async () => {
             try {
               const statusRes = await fetch(`/api/hermes/requests/${reqId}`);
-              if (!statusRes.ok) return; // Silent retry
-              
+              if (!statusRes.ok) return;
+
               const data = await statusRes.json();
               const status = data.request?.status || "running";
 
@@ -376,17 +386,19 @@ export default function ChatPage() {
                 setLoading(false);
                 const streamRes = await fetch(`/api/hermes/requests/${reqId}/stream`);
                 const resultText = streamRes.ok ? await streamRes.text() : "Task completed.";
-                const finalMsg: Message = { ...replyMsg, text: resultText, id: reqId };
-                updateActiveSessionMessages(
-                  activeSession.messages.map(m => m.id === placeholderId ? finalMsg : m)
-                );
+                setSessions((prev) => prev.map((s) => {
+                  if (s.id !== activeSessionId) return s;
+                  const msgs = s.messages.map((m) => m.id === placeholderId ? { ...replyMsg, text: resultText, id: reqId } : m);
+                  return { ...s, messages: msgs, updatedAt: new Date().toISOString() };
+                }));
               } else if (status === "failed") {
                 clearInterval(pollInterval);
                 setLoading(false);
-                const errMsg: Message = { ...replyMsg, text: "Execution failed.", id: reqId };
-                updateActiveSessionMessages(
-                  activeSession.messages.map(m => m.id === placeholderId ? errMsg : m)
-                );
+                setSessions((prev) => prev.map((s) => {
+                  if (s.id !== activeSessionId) return s;
+                  const msgs = s.messages.map((m) => m.id === placeholderId ? { ...replyMsg, text: "Execution failed.", id: reqId } : m);
+                  return { ...s, messages: msgs, updatedAt: new Date().toISOString() };
+                }));
               }
             } catch (err) {
               console.error("Polling error:", err);
