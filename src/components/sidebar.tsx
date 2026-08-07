@@ -15,7 +15,10 @@ import {
   HeartPulse,
   Cpu,
   BookOpen,
+  MessageSquare,
+  FolderOpen,
   Workflow,
+  Settings,
   Menu,
   X,
 } from "lucide-react";
@@ -25,7 +28,9 @@ const navGroups = [
     name: "Overview",
     items: [
       { href: "/", label: "Dashboard", icon: Home },
-      { href: "/hermes", label: "Hermes", icon: Cpu },
+      { href: "/chat", label: "Chat", icon: MessageSquare },
+      { href: "/files", label: "Files", icon: FolderOpen },
+      { href: "/hermes", label: "Agent", icon: Cpu },
       { href: "/tasks", label: "Tasks", icon: ClipboardList },
     ],
   },
@@ -49,32 +54,30 @@ const navGroups = [
     items: [
       { href: "/agents", label: "Agents", icon: Bot },
       { href: "/memory-wiki", label: "Memory Wiki", icon: BookOpen },
+      { href: "/settings", label: "Settings", icon: Settings },
       { href: "/ideas", label: "Ideas", icon: Lightbulb },
       { href: "/garden", label: "Garden", icon: Flower2 },
     ],
   },
 ];
 
-// Mobile tab bar - only show the 5 most important
 const mobileTabsRaw = [
   { href: "/", label: "Dashboard", icon: Home },
-  { href: "/x", label: "X", icon: Twitter },
-  { href: "/youtube", label: "YouTube", icon: Play },
-  { href: "/ideas", label: "Ideas", icon: Lightbulb },
-  { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/files", label: "Files", icon: FolderOpen },
+  { href: "/hermes", label: "Agent", icon: Cpu },
+  { href: "/tasks", label: "Tasks", icon: ClipboardList },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
-  // Close sidebar on route change (mobile)
   useEffect(() => {
     const frame = requestAnimationFrame(() => setIsOpen(false));
     return () => cancelAnimationFrame(frame);
   }, [pathname]);
 
-  // Close sidebar when resizing to desktop
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth >= 768) setIsOpen(false);
@@ -85,16 +88,24 @@ export function Sidebar() {
 
   const Logo = () => (
     <div className="flex items-center gap-2.5">
-      <div className="w-8 h-8 rounded-[10px] bg-[var(--text)] flex items-center justify-center shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
-        <span className="text-[#0a0b0d] font-bold text-[13px] tracking-tight">H</span>
+      <div className="w-8 h-8 rounded-[10px] bg-white flex items-center justify-center">
+        <img
+          src="https://ik.imagekit.io/ecuuhbi4w/Glyte-GPT%20logo.png?updatedAt=1755967856964"
+          alt="GlyteOS"
+          className="w-6 h-6 object-contain"
+        />
       </div>
-      <span className="font-semibold text-[var(--text)] tracking-[-0.01em] text-[15px]">Hermy HQ</span>
+      <div className="leading-tight">
+        <span className="font-semibold text-[var(--text)] tracking-[-0.01em] text-[15px] block">
+          GlyteOS
+        </span>
+        <span className="text-[10px] text-[var(--text-3)] block">GlyteTech</span>
+      </div>
     </div>
   );
 
   return (
     <>
-      {/* Mobile header */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-[var(--bg)]/90 backdrop-blur-xl border-b border-[var(--line)] px-4 py-3 flex items-center justify-between">
         <Logo />
         <button
@@ -106,7 +117,6 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Mobile bottom tab bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg)]/90 backdrop-blur-xl border-t border-[var(--line)] px-2 py-2 safe-area-pb">
         <nav className="flex justify-around">
           {mobileTabsRaw.map((item) => {
@@ -130,7 +140,6 @@ export function Sidebar() {
         </nav>
       </div>
 
-      {/* Mobile overlay */}
       {isOpen && (
         <div
           className="md:hidden fixed inset-0 bg-black/60 z-40"
@@ -138,7 +147,6 @@ export function Sidebar() {
         />
       )}
 
-      {/* Desktop Sidebar */}
       <aside
         className={`
           fixed md:relative z-50 md:z-10
@@ -150,15 +158,12 @@ export function Sidebar() {
           top-0 left-0
         `}
       >
-        {/* Logo */}
         <div className="hidden md:block px-5 pt-6 pb-8">
           <Logo />
         </div>
 
-        {/* Spacer for mobile header */}
         <div className="h-16 md:hidden" />
 
-        {/* Nav */}
         <nav className="flex-1 px-3 overflow-y-auto">
           <div className="space-y-5">
             {navGroups.map((group) => (
@@ -191,23 +196,6 @@ export function Sidebar() {
                           />
                           <span className="text-[13.5px] font-medium">{item.label}</span>
                         </Link>
-                        {"anchors" in group &&
-                          isActive &&
-                          (group as { anchors?: { href: string; label: string }[] }).anchors && (
-                            <div className="ml-[26px] mt-0.5 space-y-0.5 border-l border-[var(--line)] pl-3">
-                              {(group as { anchors: { href: string; label: string }[] }).anchors.map(
-                                (a) => (
-                                  <a
-                                    key={a.href}
-                                    href={a.href}
-                                    className="block text-[12px] text-[var(--text-3)] hover:text-[var(--text-2)] py-1 transition-colors"
-                                  >
-                                    {a.label}
-                                  </a>
-                                )
-                              )}
-                            </div>
-                          )}
                       </div>
                     );
                   })}
@@ -217,7 +205,6 @@ export function Sidebar() {
           </div>
         </nav>
 
-        {/* Footer */}
         <div className="px-4 py-4 border-t border-[var(--line)]">
           <div className="flex items-center gap-2 text-[var(--text-3)] text-[11.5px]">
             <span className="relative flex w-1.5 h-1.5">

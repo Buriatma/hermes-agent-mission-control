@@ -236,7 +236,7 @@ async function maybeDailyBrief() {
 
 /* ─────────────── PUSH: run website requests via Hermes ─────────────── */
 async function runRequest(r) {
-  await q(`UPDATE "AgentRequest" SET status='running', "startedAt"=now(), "updatedAt"=now() WHERE id=$1`, [r.id]);
+  await q(`UPDATE \"AgentRequest\" SET status='running', \"startedAt\"=now(), \"updatedAt\"=now() WHERE id=$1`, [r.id]);
   await emit("run", `Started: ${r.title}`, { level: "info", meta: { requestId: r.id, kind: r.kind } });
   try {
     let result = "";
@@ -271,12 +271,12 @@ async function runRequest(r) {
     } else {
       throw new Error(`unknown kind ${r.kind}`);
     }
-    await q(`UPDATE "AgentRequest" SET status='done', result=$2, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
+    await q(`UPDATE \"AgentRequest\" SET status='done', result=$2, \"finishedAt\"=now(), \"updatedAt\"=now() WHERE id=$1`,
       [r.id, result.slice(0, 8000)]);
     await emit("run", `Done: ${r.title}`, { level: "up", detail: result.slice(0, 400), meta: { requestId: r.id } });
   } catch (e) {
     const msg = (e.stderr || e.message || "error").toString().split("\n")[0].slice(0, 600);
-    await q(`UPDATE "AgentRequest" SET status='failed', error=$2, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`, [r.id, msg]);
+    await q(`UPDATE \"AgentRequest\" SET status='failed', error=$2, \"finishedAt\"=now(), \"updatedAt\"=now() WHERE id=$1`, [r.id, msg]);
     await emit("run", `Failed: ${r.title}`, { level: "down", detail: msg, meta: { requestId: r.id } });
     log("request failed:", r.id, msg);
   }
@@ -284,7 +284,7 @@ async function runRequest(r) {
 
 async function processQueue() {
   const { rows } = await q(
-    `SELECT * FROM "AgentRequest" WHERE status IN ('queued','approved') ORDER BY "createdAt" ASC LIMIT 3`
+    `SELECT * FROM \"AgentRequest\" WHERE status IN ('queued','approved','approved_oneshot') ORDER BY \"createdAt\" ASC LIMIT 3`
   );
   for (const r of rows) await runRequest(r);
 }
