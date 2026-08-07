@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: hermy-hq-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Yehhimrich@01
+      POSTGRES_DB: hermyhq
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hermyhq"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hermy-hq-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:Yehhimrich%4001@postgres:5432/hermyhq
+      - POSTGRES_URL=postgresql://postgres:Yehhimrich%4001@postgres:5432/hermyhq
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=3avQ-JhO-JAY5S7aQVWX8-Ja27gysSjyBH9y-6GrhgQ
+      - GOOGLE_CLIENT_ID=placeholder-add-google-client-id
+      - GOOGLE_CLIENT_SECRET=placeholder-add-google-secret
+      - ALLOWED_EMAILS=keshav321sharma.ks@gmail.com
+      - NEXT_PUBLIC_OWNER_NAME=Keshav Sharma
+      - NEXT_PUBLIC_BASE_URL=http://localhost:3000
+      - HERMES_BOARD=default
+      - INTERNAL_API_SECRET=bf1ab9512c1eb4187325d4ad1ee1233952b0df516309c9cf8a7853d6e442870
+      - CRON_SECRET=50527f0a1291e95028278383018eee43446f37a7d9ea4f20724625beaf48059a
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

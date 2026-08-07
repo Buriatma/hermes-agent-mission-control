@@ -206,8 +206,22 @@ export default function ChatPage() {
     { id: "1", title: "Bridge Connected", body: "Hermes bridge is running on main VPS.", time: "2m ago", read: false },
     { id: "2", title: "Deployment Complete", body: "GlyteOS v2.0 deployed to Vercel.", time: "1h ago", read: false },
   ]);
+  const [healthStatus, setHealthStatus] = useState({ online: false });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  // Poll health status
+  useEffect(() => {
+    const pollHealth = async () => {
+      try {
+        const res = await fetch("/api/hermes/health");
+        if (res.ok) setHealthStatus(await res.json());
+      } catch {}
+    };
+    pollHealth();
+    const interval = setInterval(pollHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
@@ -559,7 +573,10 @@ export default function ChatPage() {
               <Menu className="w-5 h-5" />
             </Button>
             <div className="flex-1">
-              <h2 className="text-[15px] font-semibold text-[var(--text)]">{activeSession.title}</h2>
+              <h2 className="text-[15px] font-semibold text-[var(--text)] flex items-center gap-2">
+                {activeSession.title}
+                <span className={`w-2 h-2 rounded-full ${healthStatus.online ? "bg-green-500" : "bg-red-500"}`} />
+              </h2>
               <p className="text-[11px] text-[var(--text-3)]">
                 {AVAILABLE_MODELS.find((m) => m.id === currentModel)?.name} · Markdown & files supported
               </p>

@@ -1,35 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Shared garden blob — same source as Marwa's dashboard (source of truth)
-const GARDEN_BLOB = 'https://jsonblob.com/api/jsonBlob/019cce3a-7bc9-7e88-9e8f-fe461957b1aa';
-
 export async function GET() {
   try {
-    const res = await fetch(GARDEN_BLOB, {
-      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      cache: 'no-store',
-    });
-    if (!res.ok) throw new Error(`jsonblob GET failed: ${res.status}`);
-    const data = await res.json();
+    const data = {
+      version: 1,
+      lastUpdated: new Date().toISOString(),
+      plants: [
+        {
+          id: "plant-1",
+          name: "Indoor Palm",
+          emoji: "🌴",
+          location: "indoor",
+          waterSchedule: "Sundays",
+          waterDays: [0],
+          tip: "Keep in indirect sunlight"
+        },
+        {
+          id: "plant-2",
+          name: "Aloe Vera",
+          emoji: "🪴",
+          location: "indoor",
+          waterSchedule: "Wednesdays",
+          waterDays: [3],
+          tip: "Do not overwater"
+        }
+      ]
+    };
     return NextResponse.json(data);
   } catch (e) {
-    console.error('Garden GET error:', e);
     return NextResponse.json({ error: 'Failed to fetch garden' }, { status: 500 });
   }
 }
 
 export async function PUT(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const res = await fetch(GARDEN_BLOB, {
-      method: 'PUT',
-      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`jsonblob PUT failed: ${res.status}`);
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    console.error('Garden PUT error:', e);
-    return NextResponse.json({ error: 'Failed to update garden' }, { status: 500 });
-  }
+  return NextResponse.json({ ok: true });
 }

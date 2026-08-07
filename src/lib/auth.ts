@@ -1,31 +1,47 @@
 import type { NextAuthOptions } from 'next-auth'
-import GoogleProvider from 'next-auth/providers/google'
+import CredentialsProvider from 'next-auth/providers/credentials'
 
-// Pure JWT auth — no DB adapter required.
-// Users are verified via allowedEmails; session is a signed cookie.
-// TODO: Add PrismaAdapter once DB-backed sessions are needed.
 export const authOptions: NextAuthOptions = {
-  session: { strategy: 'jwt' },
+  session: { 
+    strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+    updateAge: 24 * 60 * 60, // 24 hours - refresh token if older
+  },
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    CredentialsProvider({
+      name: 'Credentials',
+      credentials: {
+        username: { label: 'Username or Email', type: 'text' },
+        password: { label: 'Password', type: 'password' },
+      },
+      async authorize(credentials) {
+        const adminUser = process.env.ADMIN_USERNAME || 'keshav'
+        const adminPass = process.env.ADMIN_PASSWORD || 'Yehhimrich@01'
+
+        if (
+          credentials?.username === adminUser &&
+          credentials?.password === adminPass
+        ) {
+          return {
+            id: '1',
+            name: 'Keshav Sharma',
+            email: 'keshav321sharma.ks@gmail.com',
+          }
+        }
+
+        return null
+      },
     }),
   ],
   callbacks: {
-    async signIn({ user }) {
-      // Comma-separated allowlist from env, e.g. ALLOWED_EMAILS="you@example.com,teammate@example.com"
-      const allowedEmails = (process.env.ALLOWED_EMAILS ?? '')
-        .split(',')
-        .map((e) => e.trim().toLowerCase())
-        .filter(Boolean)
-      if (allowedEmails.length === 0) return false // lock down by default until configured
-      return allowedEmails.includes((user.email ?? '').toLowerCase())
-    },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id
         token.email = user.email
+      }
+      // Allow token refresh on session update
+      if (trigger === 'update' && session) {
+        token.name = session.name
       }
       return token
     },

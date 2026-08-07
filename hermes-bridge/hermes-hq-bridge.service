@@ -1,0 +1,16 @@
+[Unit]
+Description=Hermes HQ Bridge Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/data/home/hermes-agent-mission-control/hermes-bridge
+ExecStart=/usr/bin/node /opt/data/home/hermes-agent-mission-control/hermes-bridge/bridge.mjs
+Restart=always
+RestartSec=10
+EnvironmentFile=/opt/data/home/hermes-agent-mission-control/.env
+Environment=PATH=/opt/data/home/.local/share/uv/tools/hermes-agent/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
