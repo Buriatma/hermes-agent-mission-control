@@ -366,34 +366,32 @@ export default function ChatPage() {
           const pollStatus = async () => {
             try {
               const statusRes = await fetch(`/api/hermes/requests/${reqId}`);
-              if (statusRes.ok) {
-                const data = await statusRes.json();
-                const status = data.status || "running";
+              if (!statusRes.ok) return; // Silent retry
+              
+              const data = await statusRes.json();
+              const status = data.request?.status || "running";
 
-                if (status === "done" || status === "completed") {
-                  // Fetch the actual result from stream endpoint
-                  const streamRes = await fetch(`/api/hermes/requests/${reqId}/stream`);
-                  let resultText = "Task completed.";
-                  if (streamRes.ok) {
-                    resultText = await streamRes.text() || resultText;
-                  }
-                  const finalMsg: Message = { ...replyMsg, text: resultText, id: reqId };
-                  updateActiveSessionMessages(
-                    activeSession.messages.map(m => m.id === placeholderId ? finalMsg : m)
-                  );
-                } else if (status === "failed") {
-                  const errMsg: Message = { ...replyMsg, text: "Execution failed. Please check bridge logs.", id: reqId };
-                  updateActiveSessionMessages(
-                    activeSession.messages.map(m => m.id === placeholderId ? errMsg : m)
-                  );
-                }
-                // If still running, do nothing (just wait for next poll)
+              if (status === "done" || status === "completed") {
+                clearInterval(pollInterval);
+                setLoading(false);
+                const streamRes = await fetch(`/api/hermes/requests/${reqId}/stream`);
+                const resultText = streamRes.ok ? await streamRes.text() : "Task completed.";
+                const finalMsg: Message = { ...replyMsg, text: resultText, id: reqId };
+                updateActiveSessionMessages(
+                  activeSession.messages.map(m => m.id === placeholderId ? finalMsg : m)
+                );
+              } else if (status === "failed") {
+                clearInterval(pollInterval);
+                setLoading(false);
+                const errMsg: Message = { ...replyMsg, text: "Execution failed.", id: reqId };
+                updateActiveSessionMessages(
+                  activeSession.messages.map(m => m.id === placeholderId ? errMsg : m)
+                );
               }
             } catch (err) {
               console.error("Polling error:", err);
             }
           };
-          pollStatus();
           const pollInterval = setInterval(pollStatus, 2000);
           // Cleanup on component unmount would go here in real app
         }
