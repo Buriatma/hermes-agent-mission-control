@@ -8,6 +8,8 @@ export async function GET(req: Request) {
   const parent = url.searchParams.get("parent") || null;
   const type = url.searchParams.get("type") || undefined;
   const filePath = url.searchParams.get("path");
+  const search = url.searchParams.get("q") || undefined;
+  const limit = Math.min(Number(url.searchParams.get("limit") || "200"), 500);
 
   // Read single file content
   if (filePath) {
@@ -17,17 +19,27 @@ export async function GET(req: Request) {
   }
 
   const where: any = {};
-  if (parent) where.parent = parent;
-  else where.parent = null;
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: "insensitive" } },
+      { path: { contains: search, mode: "insensitive" } },
+    ];
+  } else {
+    // When no search, show root-level or specific parent
+    if (parent) where.parent = parent;
+    else where.parent = null;
+  }
   if (type) where.type = type;
 
   const files = await prisma.hermesFile.findMany({
     where,
     orderBy: [{ type: "asc" }, { name: "asc" }],
-    take: 200,
+    take: limit,
   });
 
-  return NextResponse.json({ files });
+  const total = await prisma.hermesFile.count();
+
+  return NextResponse.json({ files, total });
 }
 
 export async function POST(req: Request) {
