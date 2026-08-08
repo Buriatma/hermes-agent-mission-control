@@ -1,0 +1,10 @@
+# Timer for session mirroring — runs every 30 min
+[Unit]
+Description=Hermes session mirror timer (state.db → Neon)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+
+[Install]
+WantedBy=timers.target
