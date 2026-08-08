@@ -293,6 +293,14 @@ model HermesSession {
   messages             HermesMessage[]
 }
 
+model HermesSessionBookmark {
+  id        String   @id @default(uuid())
+  sessionId String
+  title     String
+  createdAt DateTime @default(now())
+  @@index([sessionId])
+}
+
 model HermesMessage {
   id              Int     @id
   session_id      String
