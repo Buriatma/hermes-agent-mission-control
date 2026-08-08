@@ -369,16 +369,24 @@ async function mirrorFiles() {
   
   try {
     walk(ROOT_DIR, 0);
-    log("mirrorFiles: found", entries.length, "entries, inserting...");
-    for (const e of entries) {
-      try {
-        await q(`INSERT INTO "HermesFile" (path, name, type, size, parent, "updatedAt", "syncedAt")
-           VALUES ($1,$2,$3,$4,$5,$6,now())
-           ON CONFLICT (path) DO UPDATE SET name=$2, type=$3, size=$4, parent=$5, "updatedAt"=$6, "syncedAt"=now()`,
-          [e.path, e.name, e.type, e.size || null, e.parent, e.updatedAt]);
-      } catch (err) { log("mirrorFiles insert err", e.path, err.message); }
+    log("mirrorFiles: found", entries.length, "entries");
+    // Batch inserts — 50 at a time to not block event loop
+    for (let i = 0; i < entries.length; i += 50) {
+      const batch = entries.slice(i, i + 50);
+      const values = [];
+      const params = [];
+      let idx = 1;
+      for (const e of batch) {
+        values.push(`($${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},now())`);
+        params.push(e.path, e.name, e.type, e.size || null, e.parent, e.updatedAt);
+      }
+      const sql = `INSERT INTO "HermesFile" (path,name,type,size,parent,"updatedAt","syncedAt")
+        VALUES ${values.join(",")}
+        ON CONFLICT (path) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type, size=EXCLUDED.size, parent=EXCLUDED.parent, "updatedAt"=EXCLUDED."updatedAt", "syncedAt"=now()`;
+      try { await q(sql, params); } catch (err) { log("mirrorFiles batch err", err.message); }
+      // Yield to event loop between batches
+      await new Promise(r => setTimeout(r, 10));
     }
-    // Remove files not seen in this sync
     await q(`DELETE FROM "HermesFile" WHERE "syncedAt" < now() - interval '5 minutes'`);
     log("mirrorFiles: synced", entries.length, "entries");
   } catch (e) { log("mirrorFiles err", e.message); }
