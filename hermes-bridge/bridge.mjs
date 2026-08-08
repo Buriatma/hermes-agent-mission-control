@@ -213,13 +213,29 @@ async function gitCommitWiki(msg) {
 }
 
 /* ─────────────── Chief-of-staff daily brief ─────────────── */
+function extractBrief(raw) {
+  let jsonStr = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const m = jsonStr.match(/\{[\s\S]*\}/);
+  if (m) jsonStr = m[0];
+  try { return JSON.parse(jsonStr); } catch {
+    // best-effort: pull out summary/sections via regex
+    const sum = () => {
+      const a = jsonStr.match(/"summary"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      return a ? a[1].replace(/\\"/g, '"') : null;
+    };
+    const sec = (() => {
+      const a = jsonStr.match(/"sections"\s*:\s*(\[[\s\S]*?\])/);
+      if (!a) return [];
+      try { return JSON.parse(a[1].replace(/\\"/g, '"')); } catch { return []; }
+    })();
+    return { summary: sum(), sections: sec };
+  }
+}
 async function generateBriefing() {
   const raw = (await hermes(["-z", BRIEF_PROMPT], { timeout: RUN_TIMEOUT_MS })).trim();
   let brief;
   try {
-    const jsonStr = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    const m = jsonStr.match(/\{[\s\S]*\}/);
-    brief = JSON.parse(m ? m[0] : jsonStr);
+    brief = extractBrief(raw);
   } catch { brief = { summary: raw.slice(0, 1500), sections: [] }; }
   brief.generatedAt = new Date().toISOString();
   await setStore("hermes-briefing", brief);

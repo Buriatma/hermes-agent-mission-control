@@ -50,8 +50,16 @@ export function HermesBriefing() {
         fetch("/api/hermes/requests?status=awaiting_approval&take=1").then((x) => (x.ok ? x.json() : null)),
       ]);
       if (b) {
-        setData(b);
-        // stop the "generating" spinner once a fresh brief lands
+        // Client-side fallback: if summary is still a JSON string, decode it
+        let decoded = { ...b };
+        if (typeof b.summary === "string" && b.summary.trim().startsWith("{")) {
+          try {
+            const s = b.summary.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/g, "").trim();
+            const parsed = JSON.parse(s);
+            decoded = { ...decoded, ...parsed, summary: parsed.summary ?? parsed.summary };
+          } catch { /* keep as-is */ }
+        }
+        setData(decoded);
         if (generating && b.generatedAt && b.generatedAt !== genAt.current) setGenerating(false);
       }
       if (r) setPending(r.pending ?? 0);
