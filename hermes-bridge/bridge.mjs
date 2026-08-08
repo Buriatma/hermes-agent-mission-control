@@ -327,8 +327,11 @@ async function runRequest(r) {
 async function processQueue() {
   let rows = [];
   try {
+    // Skip requests stuck in 'running' for >5 min and reset them to queued
+    await q(`UPDATE "AgentRequest" SET status='queued', "updatedAt"=now()
+             WHERE status='running' AND "startedAt" < now() - interval '5 minutes'`);
     const r = await q(
-      `SELECT * FROM \"AgentRequest\" WHERE status IN ('queued','approved','approved_oneshot') ORDER BY \"createdAt\" ASC LIMIT 3`
+      `SELECT * FROM "AgentRequest" WHERE status IN ('queued','approved','approved_oneshot') ORDER BY "createdAt" ASC LIMIT 2`
     );
     rows = r.rows;
   } catch (e) { log("processQueue query err", e.message); return; }
