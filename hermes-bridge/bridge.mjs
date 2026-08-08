@@ -367,10 +367,10 @@ function mirrorFiles() {
   try {
     walk(ROOT_DIR, 0);
     for (const e of entries) {
-      q(`INSERT INTO "HermesFile" (id, path, name, type, size, parent, "updatedAt", "syncedAt")
-         VALUES ($1,$2,$3,$4,$5,$6,$7,now())
-         ON CONFLICT (path) DO UPDATE SET name=$3, type=$4, size=$5, parent=$6, "updatedAt"=$7, "syncedAt"=now()`,
-        [Buffer.from(e.path).toString("base64").slice(0,20), e.path, e.name, e.type, e.size || null, e.parent, e.updatedAt]);
+      q(`INSERT INTO "HermesFile" (path, name, type, size, parent, "updatedAt", "syncedAt")
+         VALUES ($1,$2,$3,$4,$5,$6,now())
+         ON CONFLICT (path) DO UPDATE SET name=$2, type=$3, size=$4, parent=$5, "updatedAt"=$6, "syncedAt"=now()`,
+        [e.path, e.name, e.type, e.size || null, e.parent, e.updatedAt]);
     }
     // Remove deleted files
     q(`DELETE FROM "HermesFile" WHERE "syncedAt" < now() - interval '2 minutes'`);
