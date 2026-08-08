@@ -282,6 +282,15 @@ async function runRequest(r) {
       await gitCommitWiki(`wiki: update ${rel} (via dashboard)`);
       await mirrorWiki();
       result = `wrote ${rel}`;
+    } else if (r.kind === "file.write") {
+      const f = JSON.parse(r.prompt || "{}");
+      const target = f.path || "";
+      const ROOT_DIR = "/opt/data";
+      if (!target.startsWith(ROOT_DIR)) throw new Error("path escape");
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, String(f.content || ""), "utf-8");
+      await mirrorFiles();
+      result = "wrote " + target;
     } else if (r.kind === "briefing.generate") {
       await generateBriefing();
       lastBriefDate = new Date().toISOString().slice(0, 10);
@@ -292,6 +301,21 @@ async function runRequest(r) {
     await q(`UPDATE \"AgentRequest\" SET status='done', result=$2, \"finishedAt\"=now(), \"updatedAt\"=now() WHERE id=$1`,
       [r.id, result.slice(0, 8000)]);
     await emit("run", `Done: ${r.title}`, { level: "up", detail: result.slice(0, 400), meta: { requestId: r.id } });
+    // Update agent activity state
+    const agentMap = { max: "Chief of Staff", sage: "X Specialist", knox: "Trading Ops", nova: "YouTube Strategy", pixel: "Web Specialist" };
+    for (const [aid, role] of Object.entries(agentMap)) {
+      if (r.title.toLowerCase().includes(aid) || r.prompt?.toLowerCase().includes(aid)) {
+        try {
+          const now = new Date().toISOString();
+          const existing = await q(`SELECT * FROM "AgentState" WHERE id=$1`).then(r => r.rows[0]).catch(() => null);
+          if (existing) {
+            await q(`UPDATE "AgentState" SET status='idle', "currentTask"=$2, "lastActive"=$3 WHERE id=$1`, [aid, r.title.slice(0, 80), now]);
+          } else {
+            await q(`INSERT INTO "AgentState" (id, status, "currentTask", "lastActive", "tasksCompleted", "totalCost") VALUES ($1,'idle',$2,$3,0,0)`, [aid, r.title.slice(0, 80), now]);
+          }
+        } catch {}
+      }
+    }
   } catch (e) {
     const msg = (e.stderr || e.message || "error").toString().split("\n")[0].slice(0, 600);
     await q(`UPDATE \"AgentRequest\" SET status='failed', error=$2, \"finishedAt\"=now(), \"updatedAt\"=now() WHERE id=$1`, [r.id, msg]);
@@ -313,6 +337,46 @@ async function processQueue() {
 }
 
 
+
+
+/* ─────────────── Mirror: VPS files → Neon ─────────────── */
+function mirrorFiles() {
+  const ROOT_DIR = "/opt/data";
+  const ALLOWED = ["obsidian-vault/hermes", "home/hermes-agent-mission-control", "config.yaml"];
+  const entries = [];
+  
+  function walk(dir, depth) {
+    if (depth > 3) return;
+    try {
+      const items = fs.readdirSync(dir, { withFileTypes: true });
+      for (const item of items) {
+        const full = path.join(dir, item.name);
+        const rel = full.slice(ROOT_DIR.length + 1) || "/";
+        if (item.name.startsWith(".") || item.name === "node_modules") continue;
+        const relParts = rel.split("/");
+        if (!ALLOWED.some(a => rel.startsWith(a))) continue;
+        try {
+          const stat = fs.statSync(full);
+          entries.push({ name: item.name, path: rel, type: item.isDirectory() ? "dir" : "file", size: stat.size, updatedAt: stat.mtime.toISOString(), parent: path.dirname(rel).slice(ROOT_DIR.length + 1) || null });
+          if (item.isDirectory()) walk(full, depth + 1);
+        } catch {}
+      }
+    } catch {}
+  }
+  
+  try {
+    walk(ROOT_DIR, 0);
+    for (const e of entries) {
+      q(`INSERT INTO "HermesFile" (id, path, name, type, size, parent, "updatedAt", "syncedAt")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,now())
+         ON CONFLICT (path) DO UPDATE SET name=$3, type=$4, size=$5, parent=$6, "updatedAt"=$7, "syncedAt"=now()`,
+        [Buffer.from(e.path).toString("base64").slice(0,20), e.path, e.name, e.type, e.size || null, e.parent, e.updatedAt]);
+    }
+    // Remove deleted files
+    q(`DELETE FROM "HermesFile" WHERE "syncedAt" < now() - interval '2 minutes'`);
+    log("mirrorFiles:", entries.length, "entries");
+  } catch (e) { log("mirrorFiles err", e.message); }
+}
 
 /* ─────────────── Mirror: state.db → Neon ─────────────── */
 function mirrorSessions() {
@@ -355,6 +419,7 @@ async function mirrorTick() {
   try { await mirrorCost(); } catch (e) { log("mirrorCost err", e.message); }
   try { await maybeDailyBrief(); } catch (e) { log("maybeDailyBrief err", e.message); }
   try { mirrorSessions(); } catch (e) { log("mirrorSessions err", e.message); }
+  try { mirrorFiles(); } catch (e) { log("mirrorFiles err", e.message); }
 }
 
 async function main() {

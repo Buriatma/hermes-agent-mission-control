@@ -307,6 +307,20 @@ model HermesMessage {
   session         HermesSession @relation(fields: [session_id], references: [id])
 }
 
+
+model HermesFile {
+  id           String   @id @default(cuid())
+  path         String   @unique
+  name         String
+  type         String   // file or dir
+  size         Int?
+  content      String?
+  parent       String?
+  category     String?
+  updatedAt    DateTime @default(now())
+  syncedAt     DateTime @default(now())
+}
+
 model Brief {
   id        String   @id @default(cuid())
   date      String   @unique

@@ -1,138 +1,109 @@
 "use client";
+import { useState, useEffect } from "react";
+import { Folder, FileText, Search, ChevronRight, FileCode, Settings, BookOpen } from "lucide-react";
 
-import { useState } from "react";
-import { Folder, FileText, Search, HardDrive, Download, ChevronRight, RefreshCw, FileCode, Database } from "lucide-react";
-import { Panel, Button, Eyebrow, Pill } from "@/components/ui/kit";
+interface FileItem { name: string; path: string; type: "file" | "dir"; size: number; updatedAt: string }
+interface FileContent { name: string; path: string; type: string; size: number; content: string }
 
-interface FileItem {
-  name: string;
-  path: string;
-  type: "file" | "dir";
-  size?: string;
-  updatedAt: string;
-  category: "obsidian" | "logs" | "scripts" | "config";
-}
+const CAT_ICONS: Record<string, any> = { obsidian: BookOpen, scripts: FileCode, config: Settings, default: FileText };
 
-export default function FileManagerPage() {
-  const [selectedCategory, setSelectedCategory] = useState<string>("obsidian");
+export default function FilesPage() {
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [currentPath, setCurrentPath] = useState<string>("");
+  const [selectedFile, setSelectedFile] = useState<FileContent | null>(null);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const files: FileItem[] = [
-    { name: "Index.md", path: "/opt/data/obsidian-vault/hermes/Index.md", type: "file", size: "902 B", updatedAt: "Just now", category: "obsidian" },
-    { name: "Infrastructure.md", path: "/opt/data/obsidian-vault/hermes/Infrastructure.md", type: "file", size: "1.3 KB", updatedAt: "Just now", category: "obsidian" },
-    { name: "GlyteTech.md", path: "/opt/data/obsidian-vault/hermes/GlyteTech.md", type: "file", size: "1.0 KB", updatedAt: "Just now", category: "obsidian" },
-    { name: "MissionControl.md", path: "/opt/data/obsidian-vault/hermes/MissionControl.md", type: "file", size: "1.3 KB", updatedAt: "Just now", category: "obsidian" },
-    { name: "UserPreferences.md", path: "/opt/data/obsidian-vault/hermes/UserPreferences.md", type: "file", size: "986 B", updatedAt: "Just now", category: "obsidian" },
-    { name: "auto-deploy-glytetech.sh", path: "/home/ubuntu/auto-deploy-glytetech.sh", type: "file", size: "450 B", updatedAt: "Yesterday", category: "scripts" },
-    { name: "bridge.mjs", path: "/opt/data/home/hermes-agent-mission-control/hermes-bridge/bridge.mjs", type: "file", size: "12 KB", updatedAt: "Today", category: "scripts" },
-    { name: "config.yaml", path: "/opt/data/config.yaml", type: "file", size: "4.2 KB", updatedAt: "Today", category: "config" },
-  ];
+  useEffect(() => {
+    setLoading(true);
+    const qs = currentPath ? `?parent=${encodeURIComponent(currentPath)}` : "";
+    fetch(`/api/hermes/files${qs}`)
+      .then(r => r.json())
+      .then(d => { setFiles(d.files || []); setLoading(false); })
+      .catch(() => { setFiles([]); setLoading(false); });
+  }, [currentPath]);
 
-  const filtered = files.filter(
-    (f) =>
-      (selectedCategory === "all" || f.category === selectedCategory) &&
-      f.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const openFile = async (p: string) => {
+    const r = await fetch(`/api/hermes/files?path=${encodeURIComponent(p)}`);
+    const d = await r.json();
+    setSelectedFile(d);
+  };
+
+  const filtered = files.filter(f => !search || f.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <Eyebrow>GlyteOS Storage</Eyebrow>
-          <h1 className="text-[24px] font-semibold text-[var(--text)] tracking-[-0.02em]">
-            File Manager
-          </h1>
-          <p className="text-[13px] text-[var(--text-3)]">
-            Manage Obsidian memory notes, configuration files, and Hermes automation scripts.
-          </p>
+    <div className="flex h-[calc(100vh-3rem)] bg-[var(--bg)] text-[var(--text)]">
+      {/* Sidebar */}
+      <div className="w-64 border-r border-[var(--line)] p-3 flex flex-col shrink-0 max-md:hidden">
+        <div className="eyebrow mb-3">Locations</div>
+        {["", "obsidian-vault/hermes", "home/hermes-agent-mission-control/hermes-bridge"].map((p, i) => (
+          <button key={i} onClick={() => { setCurrentPath(p); setSelectedFile(null); }}
+            className={`w-full text-left px-3 py-2 rounded-lg text-[13px] mb-1 transition-colors ${
+              currentPath === p ? "bg-[var(--accent)] text-black font-medium" : "text-[var(--text-2)] hover:bg-[var(--surface-2)]"
+            }`}>
+            {p || "VPS Root (/opt/data)"}
+          </button>
+        ))}
+        <div className="mt-4">
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter..."
+            className="w-full px-3 py-1.5 rounded-lg bg-[var(--surface-2)] border border-[var(--line)] text-[13px] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]" />
         </div>
-
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm">
-            <RefreshCw className="w-4 h-4" />
-            Refresh Sync
-          </Button>
-        </div>
+        <div className="mt-auto text-[10px] text-[var(--text-4)] pt-3">{files.length} items · synced from VPS</div>
       </div>
 
-      {/* Categories & Search */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0">
-          <Button
-            size="sm"
-            variant={selectedCategory === "obsidian" ? "primary" : "ghost"}
-            onClick={() => setSelectedCategory("obsidian")}
-          >
-            <Database className="w-3.5 h-3.5" />
-            Obsidian Vault
-          </Button>
-          <Button
-            size="sm"
-            variant={selectedCategory === "scripts" ? "primary" : "ghost"}
-            onClick={() => setSelectedCategory("scripts")}
-          >
-            <FileCode className="w-3.5 h-3.5" />
-            Scripts
-          </Button>
-          <Button
-            size="sm"
-            variant={selectedCategory === "config" ? "primary" : "ghost"}
-            onClick={() => setSelectedCategory("config")}
-          >
-            <HardDrive className="w-3.5 h-3.5" />
-            Config
-          </Button>
-        </div>
-
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-3)]" />
-          <input
-            type="text"
-            placeholder="Filter files..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full md:w-64 pl-9 pr-4 py-2 bg-[var(--surface-1)] text-[var(--text)] rounded-[8px] border border-[var(--line)] outline-none focus:border-[var(--accent)] text-[13px]"
-          />
-        </div>
+      {/* Main */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {selectedFile ? (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="p-3 border-b border-[var(--line)] flex items-center gap-3">
+              <button onClick={() => setSelectedFile(null)} className="text-xs text-[var(--accent)] hover:underline">← Back</button>
+              <span className="text-sm font-medium">{selectedFile.name}</span>
+              <span className="text-[10px] text-[var(--text-3)] ml-auto">{(selectedFile.size / 1024).toFixed(1)} KB</span>
+            </div>
+            <pre className="flex-1 overflow-auto p-4 text-[13px] font-mono whitespace-pre-wrap leading-relaxed text-[var(--text-2)] bg-[var(--surface-1)]">
+              {selectedFile.content}
+            </pre>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-sm text-[var(--text-3)]">
+                <span>/opt/data/</span>
+                {currentPath.split("/").filter(Boolean).map((seg, i) => (
+                  <span key={i}>
+                    <ChevronRight className="w-3 h-3 inline" />
+                    <button onClick={() => setCurrentPath(currentPath.split("/").slice(0, i + 1).join("/"))}
+                      className="hover:text-[var(--text)]">{seg}</button>
+                  </span>
+                ))}
+              </div>
+              <span className="text-[10px] text-[var(--text-3)]">{files.length} items</span>
+            </div>
+            {loading ? (
+              <div className="space-y-2">{[...Array(8)].map((_, i) => <div key={i} className="h-10 rounded-lg bg-[var(--surface-2)] sk" />)}</div>
+            ) : filtered.length === 0 ? (
+              <div className="p-12 text-center text-[var(--text-3)] text-sm">No files found</div>
+            ) : (
+              <div className="space-y-0.5">
+                {filtered.map(f => (
+                  <button key={f.path} onClick={() => f.type === "dir" ? setCurrentPath(f.path) : openFile(f.path)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-[var(--surface-2)] transition-colors group">
+                    <div className="w-8 h-8 rounded-md bg-[var(--surface-2)] flex items-center justify-center text-[var(--text-3)] shrink-0">
+                      {f.type === "dir" ? <Folder className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] text-[var(--text)] truncate">{f.name}</div>
+                      <div className="text-[10px] text-[var(--text-3)] truncate">{f.path}</div>
+                    </div>
+                    {f.type === "file" && <span className="text-[10px] text-[var(--text-3)] shrink-0">{(f.size / 1024).toFixed(1)} KB</span>}
+                    <ChevronRight className="w-4 h-4 text-[var(--text-4)] shrink-0" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
-
-      {/* Files List */}
-      <Panel className="p-0 overflow-hidden">
-        <div className="divide-y divide-[var(--line)]">
-          {filtered.map((file) => (
-            <div
-              key={file.path}
-              className="p-4 flex items-center justify-between hover:bg-[var(--surface-2)]/50 transition-colors group"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-[8px] bg-[var(--surface-2)] flex items-center justify-center text-[var(--accent)] shrink-0">
-                  {file.type === "dir" ? <Folder className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-[14px] font-medium text-[var(--text)] truncate">{file.name}</h3>
-                  <p className="text-[11px] text-[var(--text-3)] truncate">{file.path}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 md:gap-4 text-[12px] text-[var(--text-3)] shrink-0">
-                <span className="hidden sm:inline">{file.size}</span>
-                <span className="hidden sm:inline">{file.updatedAt}</span>
-                <Pill tone="neutral" className="text-[10px] px-1.5 py-0">
-                  {file.category}
-                </Pill>
-                <ChevronRight className="w-4 h-4 text-[var(--text-4)] group-hover:text-[var(--text-2)] transition-colors" />
-              </div>
-            </div>
-          ))}
-
-          {filtered.length === 0 && (
-            <div className="p-8 text-center text-[var(--text-3)] text-[13px]">
-              No files found in this category.
-            </div>
-          )}
-        </div>
-      </Panel>
     </div>
   );
 }

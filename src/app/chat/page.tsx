@@ -1,7 +1,7 @@
 "use client"
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
-// ─── Types (from hermes-webui) ─────────────────────────
+// ─── Types ─────────────────────────────────────────────
 interface SessionSummary {
   id: string; source: string; model: string | null; title: string | null
   started_at: number; ended_at: number | null; end_reason: string | null
@@ -127,6 +127,10 @@ function TokenStat({ label, value, total, color }: { label: string; value: numbe
 }
 
 // ─── Main Page ────────────────────────────────────────
+interface LocalMsg {
+  id: string; role: 'user' | 'assistant' | 'pending'; content: string; ts: number
+}
+
 export default function ChatPage() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [activeId, setActiveId] = useState<string>('')
@@ -136,6 +140,11 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true)
   const [msgLoading, setMsgLoading] = useState(false)
   const [sourceFilter, setSourceFilter] = useState('')
+  const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const [reqId, setReqId] = useState<string>('')
+
+  const endRef = useRef<HTMLDivElement>(null)
 
   // Load sessions
   const loadSessions = useCallback(async () => {
@@ -163,6 +172,54 @@ export default function ChatPage() {
       .then(d => { setMessages(d.messages || []); setMsgLoading(false) })
       .catch(() => setMsgLoading(false))
   }, [activeId])
+
+  // Scroll to bottom
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, sending])
+
+  // Send a message via bridge dispatch + polling
+  const sendMessage = useCallback(async () => {
+    const text = input.trim()
+    if (!text || sending) return
+    setInput('')
+    setSending(true)
+    try {
+      const res = await fetch('/api/hermes/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text, title: text.slice(0, 60), kind: 'chat' }),
+      })
+      const d = await res.json()
+      const id = d.request?.id
+      if (!id) { setSending(false); return }
+      setReqId(id)
+      loadSessions()
+      // Poll status until done
+      const poll = setInterval(async () => {
+        try {
+          const r = await fetch(`/api/hermes/requests/${id}`)
+          const dd = await r.json()
+          const st = dd.request?.status
+          if (st === 'done' || st === 'failed') {
+            clearInterval(poll)
+            setSending(false)
+            const result = dd.request?.result || (st === 'failed' ? `Error: ${dd.request?.error}` : '')
+            // Refresh sessions + messages
+            loadSessions()
+            if (activeId) {
+              const mr = await fetch(`/api/hermes/sessions/${activeId}`)
+              const md = await mr.json()
+              setMessages(md.messages || [])
+            } else {
+              // auto-open latest session
+              const sr = await fetch('/api/hermes/sessions?limit=1')
+              const sd = await sr.json()
+              if (sd.sessions?.[0]) setActiveId(sd.sessions[0].id)
+            }
+          }
+        } catch (e) { console.error(e); clearInterval(poll); setSending(false) }
+      }, 2500)
+    } catch (e) { console.error(e); setSending(false) }
+  }, [input, sending, activeId, loadSessions])
 
   const activeSession = sessions.find(s => s.id === activeId)
   const totalTokens = activeSession
@@ -244,94 +301,125 @@ export default function ChatPage() {
       </div>
 
       {/* ─── Main Content ────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {!activeId ? (
-          <div className="flex items-center justify-center h-full text-[var(--text-3)]">
+          <div className="flex-1 flex items-center justify-center text-[var(--text-3)]">
             <div className="text-center">
               <p className="text-lg">Select a session</p>
-              <p className="text-sm mt-1">{sessions.length} sessions available</p>
+              <p className="text-sm mt-1">or send a message below to start a new one</p>
             </div>
           </div>
         ) : !activeSession ? (
           <div className="p-6 text-[var(--text-3)]">Loading...</div>
         ) : (
-          <div className="p-6 space-y-6 max-w-4xl mx-auto">
-            {/* Session Header */}
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">{activeSession.title || activeSession.id.slice(0, 12)}</h2>
-                <div className="flex gap-3 mt-1 text-xs text-[var(--text-3)]">
-                  <SourceBadge source={activeSession.source} />
-                  <span>{activeSession.model || 'unknown'}</span>
-                  <span>{activeSession.message_count} msgs</span>
-                  <span>{activeSession.tool_call_count} tools</span>
-                  <span>{timeAgo(activeSession.started_at)}</span>
+          <>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-4xl mx-auto w-full">
+              {/* Session Header */}
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold">{activeSession.title || activeSession.id.slice(0, 12)}</h2>
+                  <div className="flex gap-3 mt-1 text-xs text-[var(--text-3)]">
+                    <SourceBadge source={activeSession.source} />
+                    <span>{activeSession.model || 'unknown'}</span>
+                    <span>{activeSession.message_count} msgs</span>
+                    <span>{activeSession.tool_call_count} tools</span>
+                    <span>{timeAgo(activeSession.started_at)}</span>
+                  </div>
                 </div>
+                <CostBadge cost={activeSession.estimated_cost_usd ?? activeSession.actual_cost_usd} />
               </div>
-              <CostBadge cost={activeSession.estimated_cost_usd ?? activeSession.actual_cost_usd} />
+
+              {/* Token Usage Bar */}
+              {totalTokens > 0 && (
+                <div className="rounded-lg border border-[var(--line)] p-4 bg-[var(--surface-1)]">
+                  <h3 className="text-xs font-medium mb-3 text-[var(--text-3)]">Token Usage</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <TokenStat label="Input" value={activeSession.input_tokens} total={totalTokens} color="#3b82f6" />
+                    <TokenStat label="Output" value={activeSession.output_tokens} total={totalTokens} color="#22c55e" />
+                    <TokenStat label="Cache Read" value={activeSession.cache_read_tokens} total={totalTokens} color="#f59e0b" />
+                    <TokenStat label="Cache Write" value={activeSession.cache_write_tokens} total={totalTokens} color="var(--accent)" />
+                    <TokenStat label="Reasoning" value={activeSession.reasoning_tokens} total={totalTokens} color="#c084fc" />
+                  </div>
+                  <div className="h-2 rounded-full mt-3 flex overflow-hidden bg-[var(--bg)]">
+                    {activeSession.input_tokens > 0 && <div style={{ width: `${(activeSession.input_tokens / totalTokens) * 100}%`, backgroundColor: '#3b82f6' }} />}
+                    {activeSession.output_tokens > 0 && <div style={{ width: `${(activeSession.output_tokens / totalTokens) * 100}%`, backgroundColor: '#22c55e' }} />}
+                    {activeSession.cache_read_tokens > 0 && <div style={{ width: `${(activeSession.cache_read_tokens / totalTokens) * 100}%`, backgroundColor: '#f59e0b' }} />}
+                    {activeSession.cache_write_tokens > 0 && <div style={{ width: `${(activeSession.cache_write_tokens / totalTokens) * 100}%`, backgroundColor: 'var(--accent)' }} />}
+                    {activeSession.reasoning_tokens > 0 && <div style={{ width: `${(activeSession.reasoning_tokens / totalTokens) * 100}%`, backgroundColor: '#c084fc' }} />}
+                  </div>
+                </div>
+              )}
+
+              {/* Messages */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-[var(--text-3)]">
+                    Messages {messages ? `(${messages.length})` : ''}
+                  </h3>
+                  <button onClick={() => setSortOrder(p => p === 'asc' ? 'desc' : 'asc')}
+                    className="text-[10px] px-2 py-1 rounded flex items-center gap-1 bg-[var(--surface-1)] text-[var(--text-3)]">
+                    {sortOrder === 'asc' ? '↑ Oldest first' : '↓ Newest first'}
+                  </button>
+                </div>
+                {msgLoading && <p className="text-sm text-[var(--text-3)]">Loading messages...</p>}
+                {(sortOrder === 'desc' ? [...messages].reverse() : messages).map(m => (
+                  <div key={m.id} className="rounded-lg border border-[var(--line)] p-3 bg-[var(--surface-1)]">
+                    <div className="flex items-center gap-2 mb-1">
+                      <RoleBadge role={m.role} />
+                      {m.tool_name && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--bg)] text-amber-400">
+                          {m.tool_name}
+                        </span>
+                      )}
+                      <span className="text-[10px] ml-auto text-[var(--text-3)]">
+                        {new Date(m.timestamp * 1000).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    {m.content && <MessageContent content={m.content} role={m.role} />}
+                    {!!m.tool_calls && (
+                      <details className="mt-2">
+                        <summary className="text-[10px] cursor-pointer text-[var(--accent)]">
+                          Tool calls ({Array.isArray(m.tool_calls) ? (m.tool_calls as unknown[]).length : 1})
+                        </summary>
+                        <pre className="text-[10px] mt-1 p-2 rounded overflow-x-auto font-mono bg-[var(--bg)]">
+                          {JSON.stringify(m.tool_calls, null, 2)}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                ))}
+                {sending && (
+                  <div className="rounded-lg border border-[var(--accent)]/40 p-3 bg-[var(--surface-1)]">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
+                      <span className="text-[13px] text-[var(--accent)]">Hermes processing... <span className="text-[var(--text-3)]">(request {reqId.slice(-6)})</span></span>
+                    </div>
+                  </div>
+                )}
+                <div ref={endRef} />
+              </div>
             </div>
 
-            {/* Token Usage Bar */}
-            {totalTokens > 0 && (
-              <div className="rounded-lg border border-[var(--line)] p-4 bg-[var(--surface-1)]">
-                <h3 className="text-xs font-medium mb-3 text-[var(--text-3)]">Token Usage</h3>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                  <TokenStat label="Input" value={activeSession.input_tokens} total={totalTokens} color="#3b82f6" />
-                  <TokenStat label="Output" value={activeSession.output_tokens} total={totalTokens} color="#22c55e" />
-                  <TokenStat label="Cache Read" value={activeSession.cache_read_tokens} total={totalTokens} color="#f59e0b" />
-                  <TokenStat label="Cache Write" value={activeSession.cache_write_tokens} total={totalTokens} color="var(--accent)" />
-                  <TokenStat label="Reasoning" value={activeSession.reasoning_tokens} total={totalTokens} color="#c084fc" />
-                </div>
-                <div className="h-2 rounded-full mt-3 flex overflow-hidden bg-[var(--bg)]">
-                  {activeSession.input_tokens > 0 && <div style={{ width: `${(activeSession.input_tokens / totalTokens) * 100}%`, backgroundColor: '#3b82f6' }} />}
-                  {activeSession.output_tokens > 0 && <div style={{ width: `${(activeSession.output_tokens / totalTokens) * 100}%`, backgroundColor: '#22c55e' }} />}
-                  {activeSession.cache_read_tokens > 0 && <div style={{ width: `${(activeSession.cache_read_tokens / totalTokens) * 100}%`, backgroundColor: '#f59e0b' }} />}
-                  {activeSession.cache_write_tokens > 0 && <div style={{ width: `${(activeSession.cache_write_tokens / totalTokens) * 100}%`, backgroundColor: 'var(--accent)' }} />}
-                  {activeSession.reasoning_tokens > 0 && <div style={{ width: `${(activeSession.reasoning_tokens / totalTokens) * 100}%`, backgroundColor: '#c084fc' }} />}
-                </div>
-              </div>
-            )}
-
-            {/* Messages */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-[var(--text-3)]">
-                  Messages {messages ? `(${messages.length})` : ''}
-                </h3>
-                <button onClick={() => setSortOrder(p => p === 'asc' ? 'desc' : 'asc')}
-                  className="text-[10px] px-2 py-1 rounded flex items-center gap-1 bg-[var(--surface-1)] text-[var(--text-3)]">
-                  {sortOrder === 'asc' ? '↑ Oldest first' : '↓ Newest first'}
+            {/* Input bar */}
+            <div className="border-t border-[var(--line)] p-3 max-w-4xl mx-auto w-full">
+              <div className="flex gap-2">
+                <input
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                  placeholder="Message Hermes... (Enter to send)"
+                  className="flex-1 rounded-lg px-4 py-2.5 text-[13px] text-[var(--text)] bg-[var(--surface-1)] border border-[var(--line)] focus:outline-none focus:border-[var(--accent)]"
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={!input.trim() || sending}
+                  className="px-5 py-2 rounded-lg text-[13px] font-medium text-black bg-[var(--accent)] hover:opacity-90 disabled:opacity-40"
+                >
+                  Send
                 </button>
               </div>
-              {msgLoading && <p className="text-sm text-[var(--text-3)]">Loading messages...</p>}
-              {(sortOrder === 'desc' ? [...messages].reverse() : messages).map(m => (
-                <div key={m.id} className="rounded-lg border border-[var(--line)] p-3 bg-[var(--surface-1)]">
-                  <div className="flex items-center gap-2 mb-1">
-                    <RoleBadge role={m.role} />
-                    {m.tool_name && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--bg)] text-amber-400">
-                        {m.tool_name}
-                      </span>
-                    )}
-                    <span className="text-[10px] ml-auto text-[var(--text-3)]">
-                      {new Date(m.timestamp * 1000).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  {m.content && <MessageContent content={m.content} role={m.role} />}
-                  {!!m.tool_calls && (
-                    <details className="mt-2">
-                      <summary className="text-[10px] cursor-pointer text-[var(--accent)]">
-                        Tool calls ({Array.isArray(m.tool_calls) ? (m.tool_calls as unknown[]).length : 1})
-                      </summary>
-                      <pre className="text-[10px] mt-1 p-2 rounded overflow-x-auto font-mono bg-[var(--bg)]">
-                        {JSON.stringify(m.tool_calls, null, 2)}
-                      </pre>
-                    </details>
-                  )}
-                </div>
-              ))}
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>

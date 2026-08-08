@@ -135,17 +135,37 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
     setMsgs(newMsgs);
     setLoading(true);
     try {
-      const r = await fetch("/api/agent-chat", {
+      // Route through bridge — real Hermes dispatch, not mock OpenRouter
+      const r = await fetch("/api/hermes/dispatch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentId: agent.id, message: text, history: msgs }),
+        body: JSON.stringify({
+          prompt: `You are ${agent.name} (${agent.role}). Respond to this message from the operator:\n\n${text}`,
+          title: `${agent.name}: ${text.slice(0, 60)}`,
+          kind: "chat",
+        }),
       });
-      const d = await r.json() as { reply: string };
-      setMsgs([...newMsgs, { role: "assistant", content: d.reply }]);
+      const d = await r.json() as { request?: { id: string } };
+      const id = d.request?.id;
+      if (!id) throw new Error("no request id");
+      // Poll for completion
+      const poll = setInterval(async () => {
+        try {
+          const rr = await fetch(`/api/hermes/requests/${id}`);
+          const dd = await rr.json();
+          const st = dd.request?.status;
+          if (st === "done" || st === "failed") {
+            clearInterval(poll);
+            const reply = st === "done" ? (dd.request?.result || "Done.") : `Error: ${dd.request?.error || "failed"}`;
+            setMsgs([...newMsgs, { role: "assistant", content: reply }]);
+            setLoading(false);
+          }
+        } catch { clearInterval(poll); setLoading(false); }
+      }, 2500);
     } catch {
       setMsgs([...newMsgs, { role: "assistant", content: "Sorry, something went wrong. Try again." }]);
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   const agentColor = roleColors[agent.id]?.split(" ")[0]?.replace("from-","text-")?.replace("/20","") || "text-[var(--text-3)]";
