@@ -634,7 +634,7 @@ export default function ChatPage() {
                 <textarea
                   ref={inputRef}
                   value={input}
-                  onChange={e => setInput(e.target.value)}
+                  onChange={e => { setInput(e.target.value); if (e.target.value.startsWith('/')) setShowCommands(true) }}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
@@ -645,6 +645,7 @@ export default function ChatPage() {
                     }
                   }}
                   onFocus={() => { if (input.startsWith('/')) setShowCommands(true) }}
+                  onChange={e => { setInput(e.target.value); if (e.target.value.startsWith('/')) setShowCommands(true) }}
                   placeholder="Message Hermes... (/ for commands)"
                   rows={1}
                   className="w-full px-4 py-3 pr-10 rounded-2xl text-[13px] text-[var(--text)] bg-[var(--surface-1)] border border-[var(--line)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/50 placeholder-[var(--text-3)] resize-none transition-all"
