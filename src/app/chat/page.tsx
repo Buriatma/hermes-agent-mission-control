@@ -363,29 +363,35 @@ export default function ChatPage() {
                 </div>
                 {msgLoading && <p className="text-sm text-[var(--text-3)]">Loading messages...</p>}
                 {(sortOrder === 'desc' ? [...messages].reverse() : messages).map(m => (
-                  <div key={m.id} className="rounded-lg border border-[var(--line)] p-3 bg-[var(--surface-1)]">
-                    <div className="flex items-center gap-2 mb-1">
-                      <RoleBadge role={m.role} />
-                      {m.tool_name && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--bg)] text-amber-400">
-                          {m.tool_name}
+                  <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
+                      m.role === 'user'
+                        ? 'bg-[var(--accent)] text-black rounded-br-md'
+                        : 'bg-[var(--surface-2)] border border-[var(--line)] rounded-bl-md'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        {m.role !== 'user' && <RoleBadge role={m.role} />}
+                        {m.tool_name && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--bg)] text-amber-400">
+                            {m.tool_name}
+                          </span>
+                        )}
+                        <span className={`text-[10px] ml-auto ${m.role === 'user' ? 'text-white/70' : 'text-[var(--text-3)]'}`}>
+                          {new Date(m.timestamp * 1000).toLocaleTimeString()}
                         </span>
+                      </div>
+                      {m.content && <MessageContent content={m.content} role={m.role} />}
+                      {!!m.tool_calls && (
+                        <details className="mt-2">
+                          <summary className="text-[10px] cursor-pointer text-[var(--accent)]">
+                            Tool calls ({Array.isArray(m.tool_calls) ? (m.tool_calls as unknown[]).length : 1})
+                          </summary>
+                          <pre className="text-[10px] mt-1 p-2 rounded overflow-x-auto font-mono bg-[var(--bg)]">
+                            {JSON.stringify(m.tool_calls, null, 2)}
+                          </pre>
+                        </details>
                       )}
-                      <span className="text-[10px] ml-auto text-[var(--text-3)]">
-                        {new Date(m.timestamp * 1000).toLocaleTimeString()}
-                      </span>
                     </div>
-                    {m.content && <MessageContent content={m.content} role={m.role} />}
-                    {!!m.tool_calls && (
-                      <details className="mt-2">
-                        <summary className="text-[10px] cursor-pointer text-[var(--accent)]">
-                          Tool calls ({Array.isArray(m.tool_calls) ? (m.tool_calls as unknown[]).length : 1})
-                        </summary>
-                        <pre className="text-[10px] mt-1 p-2 rounded overflow-x-auto font-mono bg-[var(--bg)]">
-                          {JSON.stringify(m.tool_calls, null, 2)}
-                        </pre>
-                      </details>
-                    )}
                   </div>
                 ))}
                 {sending && (

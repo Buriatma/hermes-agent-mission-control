@@ -345,7 +345,7 @@ async function processQueue() {
 /* ─────────────── Mirror: VPS files → Neon ─────────────── */
 function mirrorFiles() {
   const ROOT_DIR = "/opt/data";
-  const ALLOWED = ["obsidian-vault/hermes", "home/hermes-agent-mission-control", "config.yaml"];
+  const ALLOWED = ["obsidian-vault", "home", "scripts", "config.yaml", "KNOWLEDGE", "skills"];
   const entries = [];
   
   function walk(dir, depth) {
