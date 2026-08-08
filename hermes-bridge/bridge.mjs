@@ -349,7 +349,7 @@ async function mirrorFiles() {
   const entries = [];
   
   function walk(dir, depth) {
-    if (depth > 3) return;
+    if (depth > 4) return;
     try {
       const items = fs.readdirSync(dir, { withFileTypes: true });
       for (const item of items) {
