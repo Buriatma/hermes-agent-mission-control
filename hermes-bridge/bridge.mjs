@@ -17,6 +17,7 @@
  *               BRIDGE_MIRROR_MS (30000), HERMES_BIN (default "hermes").
  */
 import pg from "pg";
+import Database from "better-sqlite3";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
@@ -31,6 +32,7 @@ const POLL_MS = Number(process.env.BRIDGE_POLL_MS || 5000);
 const MIRROR_MS = Number(process.env.BRIDGE_MIRROR_MS || 30000);
 const RUN_TIMEOUT_MS = Number(process.env.BRIDGE_RUN_TIMEOUT_MS || 240000);
 const WIKI_DIR = process.env.HERMES_WIKI || path.join(os.homedir(), ".hermes", "wiki");
+const STATE_DB = process.env.HERMES_STATE_DB || "/opt/data/state.db";
 const BRIEF_HOUR = Number(process.env.BRIEF_HOUR || 8);   // local hour to auto-generate the daily brief
 const BRIEF_PROMPT =
   "You are the operator's chief of staff. Produce today's brief. Read your memory wiki open-loops " +
@@ -310,6 +312,40 @@ async function processQueue() {
   for (const r of rows) await runRequest(r);
 }
 
+
+
+/* ─────────────── Mirror: state.db → Neon ─────────────── */
+function mirrorSessions() {
+  if (!fs.existsSync(STATE_DB)) return;
+  const local = new Database(STATE_DB, { readonly: true });
+  try {
+    const sessions = local.prepare(`SELECT id, source, model, title, started_at, ended_at, end_reason, message_count, tool_call_count, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, estimated_cost_usd, actual_cost_usd, billing_provider FROM sessions ORDER BY started_at DESC LIMIT 200`).all();
+    // Get preview from first user message
+    const getPreview = local.prepare(`SELECT content FROM messages WHERE session_id = ? AND role = 'user' AND content IS NOT NULL ORDER BY timestamp LIMIT 1`);
+
+    for (const s of sessions) {
+      const preview = getPreview.get(s.id);
+      const p = preview ? (preview.content || '').slice(0, 200) : '';
+      const lastMsg = local.prepare(`SELECT MAX(timestamp) as last_active FROM messages WHERE session_id = ?`).get(s.id);
+      q(`INSERT INTO "HermesSession" (id, source, model, title, "started_at", "ended_at", "end_reason", "message_count", "tool_call_count", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_cost_usd", "actual_cost_usd", "billing_provider", preview, "last_active", "synced_at")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19, now())
+         ON CONFLICT (id) DO UPDATE SET source=$2, model=$3, title=$4, "ended_at"=$6, "end_reason"=$7, "message_count"=$8, "tool_call_count"=$9, "input_tokens"=$10, "output_tokens"=$11, "cache_read_tokens"=$12, "cache_write_tokens"=$13, "reasoning_tokens"=$14, "estimated_cost_usd"=$15, "actual_cost_usd"=$16, "billing_provider"=$17, preview=$18, "last_active"=$19, "synced_at"=now()`,
+        [s.id, s.source, s.model, s.title, s.started_at, s.ended_at, s.end_reason, s.message_count, s.tool_call_count, s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_write_tokens, s.reasoning_tokens, s.estimated_cost_usd, s.actual_cost_usd, s.billing_provider, p, lastMsg?.last_active]);
+    }
+
+    // Mirror recent messages (last 5000 across recent sessions)
+    const msgs = local.prepare(`SELECT id, session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, token_count, finish_reason FROM messages WHERE session_id IN (SELECT id FROM sessions ORDER BY started_at DESC LIMIT 50) ORDER BY timestamp`).all();
+    for (const m of msgs) {
+      const tc = m.tool_calls ? JSON.stringify(m.tool_calls) : null;
+      q(`INSERT INTO "HermesMessage" (id, session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, token_count, finish_reason)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (id) DO UPDATE SET content=$4, tool_calls=$6, finish_reason=$10`,
+        [m.id, m.session_id, m.role, m.content, m.tool_call_id, tc, m.tool_name, m.timestamp, m.token_count, m.finish_reason]);
+    }
+    log("mirrorSessions: synced", sessions.length, "sessions,", msgs.length, "msgs");
+  } catch (e) { log("mirrorSessions err", e.message); } finally { local.close(); }
+}
+
 /* ─────────────── loops ─────────────── */
 async function mirrorTick() {
   try { await mirrorKanban(); } catch (e) { log("mirrorKanban err", e.message); }
@@ -318,6 +354,7 @@ async function mirrorTick() {
   try { await mirrorWiki(); } catch (e) { log("mirrorWiki err", e.message); }
   try { await mirrorCost(); } catch (e) { log("mirrorCost err", e.message); }
   try { await maybeDailyBrief(); } catch (e) { log("maybeDailyBrief err", e.message); }
+  try { mirrorSessions(); } catch (e) { log("mirrorSessions err", e.message); }
 }
 
 async function main() {

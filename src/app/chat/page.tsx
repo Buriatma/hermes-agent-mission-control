@@ -1,406 +1,338 @@
 "use client"
-import { useState, useEffect, useRef } from 'react'
-import { api } from '@/lib/hermes/client'
-import type { Message, SessionSummary } from '@/lib/hermes/types'
-import { SessionDetail } from '@/components/chat/SessionDetail'
-import { Sidebar } from '@/components/layout/Sidebar'
+import { useState, useEffect, useCallback } from 'react'
 
-const AVAILABLE_MODELS = [
-  { id: "best-long-context", name: "GLM-4.7", provider: "9router" },
-  { id: "custom:9router", name: "9Router Router", provider: "9router" },
-  { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
-  { id: "gpt-4o", name: "GPT-4o", provider: "OpenAI" },
-]
-
-interface ChatSession extends SessionSummary {
-  messages: Message[]
+// ─── Types (from hermes-webui) ─────────────────────────
+interface SessionSummary {
+  id: string; source: string; model: string | null; title: string | null
+  started_at: number; ended_at: number | null; end_reason: string | null
+  message_count: number; tool_call_count: number
+  input_tokens: number; output_tokens: number
+  cache_read_tokens: number; cache_write_tokens: number; reasoning_tokens: number
+  estimated_cost_usd: number | null; actual_cost_usd: number | null
+  billing_provider: string | null; preview: string; last_active: number | null
+}
+interface Message {
+  id: number; session_id: string; role: string; content: string | null
+  tool_call_id: string | null; tool_calls: unknown; tool_name: string | null
+  timestamp: number; token_count: number | null; finish_reason: string | null
 }
 
+// ─── Helpers ──────────────────────────────────────────
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
+  return String(n)
+}
+function timeAgo(ts: number): string {
+  const diff = Date.now() / 1000 - ts
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+const SOURCE_COLORS: Record<string, string> = {
+  cli: '#06b6d4', telegram: '#38bdf8', discord: '#818cf8',
+  whatsapp: '#25d366', buzz: '#f59e0b', web: '#a78bfa', webhook: '#94a3b8',
+}
+
+// ─── Components ───────────────────────────────────────
+function RoleBadge({ role }: { role: string }) {
+  const colors: Record<string, string> = {
+    user: '#3b82f6', assistant: '#22c55e', system: '#f59e0b', tool: '#a78bfa',
+  }
+  const color = colors[role] || '#94a3b8'
+  return (
+    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded"
+      style={{ backgroundColor: `${color}22`, color }}>
+      {role}
+    </span>
+  )
+}
+function CostBadge({ cost }: { cost: number | null }) {
+  if (cost == null || cost === 0) return null
+  return (
+    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+      style={{ color: 'var(--accent)', backgroundColor: 'var(--accent)15' }}>
+      ${cost.toFixed(4)}
+    </span>
+  )
+}
+function SourceBadge({ source }: { source: string }) {
+  const bg = SOURCE_COLORS[source] || '#94a3b8'
+  return (
+    <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium"
+      style={{ backgroundColor: bg, color: '#fff' }}>
+      {source}
+    </span>
+  )
+}
+
+function tryFormatJson(text: string): string | null {
+  const trimmed = text.trim()
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null
+  try { return JSON.stringify(JSON.parse(trimmed), null, 2) } catch { return null }
+}
+
+function MessageContent({ content, role }: { content: string; role: string }) {
+  const isToolResponse = role === 'tool'
+  const isLong = content.length > 500
+
+  if (isToolResponse) {
+    const formatted = tryFormatJson(content)
+    if (formatted) {
+      if (isLong) return (
+        <details className="mt-1">
+          <summary className="text-xs cursor-pointer text-[var(--text-3)]">
+            Tool response ({content.length.toLocaleString()} chars)
+          </summary>
+          <pre className="text-xs mt-1 p-2 rounded overflow-x-auto font-mono whitespace-pre-wrap bg-[var(--bg)] max-h-[400px] overflow-y-auto">
+            {formatted}
+          </pre>
+        </details>
+      )
+      return <pre className="text-xs mt-1 p-2 rounded overflow-x-auto font-mono whitespace-pre-wrap bg-[var(--bg)]">{formatted}</pre>
+    }
+    if (isLong) return (
+      <details className="mt-1">
+        <summary className="text-xs cursor-pointer text-[var(--text-3)]">
+          Tool response ({content.length.toLocaleString()} chars)
+        </summary>
+        <pre className="text-sm mt-1 p-2 rounded whitespace-pre-wrap break-words font-mono bg-[var(--bg)] max-h-[400px] overflow-y-auto">{content}</pre>
+      </details>
+    )
+    return <pre className="text-xs mt-1 p-2 rounded whitespace-pre-wrap break-words font-mono bg-[var(--bg)]">{content}</pre>
+  }
+
+  if (isLong && content.length > 2000) return (
+    <details className="mt-1" open>
+      <summary className="text-xs cursor-pointer text-[var(--text-3)]">
+        {content.length.toLocaleString()} chars
+      </summary>
+      <pre className="text-sm whitespace-pre-wrap break-words mt-1 font-sans leading-relaxed max-h-[600px] overflow-y-auto">{content}</pre>
+    </details>
+  )
+
+  return <pre className="text-sm whitespace-pre-wrap break-words mt-1 font-sans leading-relaxed">{content}</pre>
+}
+
+function TokenStat({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
+  if (value === 0) return null
+  return (
+    <div className="text-center">
+      <div className="text-[10px] text-[var(--text-3)]">{label}</div>
+      <div className="text-sm font-semibold" style={{ color }}>{formatTokens(value)}</div>
+      <div className="text-[10px] text-[var(--text-3)]">{((value / total) * 100).toFixed(0)}%</div>
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────
 export default function ChatPage() {
-  const [sessions, setSessions] = useState<ChatSession[]>([])
-  const [activeSessionId, setActiveSessionId] = useState<string>('')
-  const [input, setInput] = useState('')
-  const [currentModel, setCurrentModel] = useState(AVAILABLE_MODELS[0].id)
-  const [loading, setLoading] = useState(false)
-  const [showSidebar, setShowSidebar] = useState(false)
-  const [showModelPicker, setShowModelPicker] = useState(false)
-  const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0]
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [activeId, setActiveId] = useState<string>('')
+  const [messages, setMessages] = useState<Message[]>([])
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [msgLoading, setMsgLoading] = useState(false)
+  const [sourceFilter, setSourceFilter] = useState('')
 
-  // Load sessions from DB on mount
+  // Load sessions
+  const loadSessions = useCallback(async () => {
+    try {
+      const qs = new URLSearchParams()
+      if (sourceFilter) qs.set('source', sourceFilter)
+      qs.set('limit', '100')
+      const res = await fetch(`/api/hermes/sessions?${qs}`)
+      if (res.ok) {
+        const data = await res.json()
+        setSessions(data.sessions || [])
+      }
+    } catch (e) { console.error(e) }
+    setLoading(false)
+  }, [sourceFilter])
+
+  useEffect(() => { loadSessions() }, [loadSessions])
+
+  // Load messages for active session
   useEffect(() => {
-    loadSessions()
-  }, [])
+    if (!activeId) return
+    setMsgLoading(true)
+    fetch(`/api/hermes/sessions/${activeId}`)
+      .then(r => r.json())
+      .then(d => { setMessages(d.messages || []); setMsgLoading(false) })
+      .catch(() => setMsgLoading(false))
+  }, [activeId])
 
-  const loadSessions = async () => {
-    try {
-      const data = await api.sessions({ limit: 50 })
-      const mappedSessions: ChatSession[] = data.requests
-        .filter((r: any) => r.kind === 'chat' || r.kind === 'oneshot')
-        .map((r: any) => ({
-          id: r.id,
-          source: r.origin || 'web',
-          model: null,
-          title: r.title || r.prompt?.slice(0, 50) || 'Untitled',
-          started_at: r.createdAt ? Math.floor(new Date(r.createdAt).getTime() / 1000) : Math.floor(Date.now() / 1000),
-          ended_at: r.finishedAt ? Math.floor(new Date(r.finishedAt).getTime() / 1000) : null,
-          end_reason: r.status === 'done' ? 'completed' : r.status === 'failed' ? 'failed' : null,
-          message_count: 2,
-          tool_call_count: 0,
-          input_tokens: 0,
-          output_tokens: 0,
-          cache_read_tokens: 0,
-          cache_write_tokens: 0,
-          reasoning_tokens: 0,
-          estimated_cost_usd: null,
-          actual_cost_usd: null,
-          billing_provider: null,
-          preview: r.result || r.prompt || '',
-          last_active: r.updatedAt ? Math.floor(new Date(r.updatedAt).getTime() / 1000) : null,
-          messages: [
-            ...(r.prompt ? [{
-              id: 1,
-              session_id: r.id,
-              role: 'user',
-              content: r.prompt,
-              timestamp: r.createdAt ? Math.floor(new Date(r.createdAt).getTime() / 1000) : 0,
-            }] : []),
-            ...(r.result ? [{
-              id: 2,
-              session_id: r.id,
-              role: 'assistant',
-              content: r.result,
-              timestamp: r.finishedAt ? Math.floor(new Date(r.finishedAt).getTime() / 1000) : 0,
-            }] : []),
-            ...(r.error && !r.result ? [{
-              id: 2,
-              session_id: r.id,
-              role: 'assistant',
-              content: `Error: ${r.error}`,
-              timestamp: r.finishedAt ? Math.floor(new Date(r.finishedAt).getTime() / 1000) : 0,
-            }] : []),
-          ],
-        }))
-      setSessions(mappedSessions)
-      if (mappedSessions.length > 0 && !activeSessionId) {
-        setActiveSessionId(mappedSessions[0].id)
-      }
-    } catch (e) {
-      console.error('Failed to load sessions:', e)
-    }
-  }
+  const activeSession = sessions.find(s => s.id === activeId)
+  const totalTokens = activeSession
+    ? activeSession.input_tokens + activeSession.output_tokens + activeSession.cache_read_tokens + activeSession.cache_write_tokens + activeSession.reasoning_tokens
+    : 0
 
-  const createNewSession = () => {
-    const newSession: ChatSession = {
-      id: 'new-' + Date.now(),
-      source: 'web',
-      model: currentModel,
-      title: 'New Chat',
-      started_at: Math.floor(Date.now() / 1000),
-      ended_at: null,
-      end_reason: null,
-      message_count: 0,
-      tool_call_count: 0,
-      input_tokens: 0,
-      output_tokens: 0,
-      cache_read_tokens: 0,
-      cache_write_tokens: 0,
-      reasoning_tokens: 0,
-      estimated_cost_usd: null,
-      actual_cost_usd: null,
-      billing_provider: null,
-      preview: '',
-      last_active: null,
-      messages: [],
-    }
-    setSessions(prev => [newSession, ...prev])
-    setActiveSessionId(newSession.id)
-  }
-
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return
-    const targetId = activeSessionId || 'new-' + Date.now()
-    const promptText = input
-
-    const userMessage: Message = {
-      id: Date.now(),
-      session_id: targetId,
-      role: 'user',
-      content: promptText,
-      timestamp: Math.floor(Date.now() / 1000),
-    }
-
-    // If no active session yet (new session), create it
-    if (!activeSessionId) {
-      const newSession: ChatSession = {
-        id: targetId,
-        source: 'web',
-        model: currentModel,
-        title: promptText.slice(0, 50),
-        started_at: Math.floor(Date.now() / 1000),
-        ended_at: null,
-        end_reason: null,
-        message_count: 0,
-        tool_call_count: 0,
-        input_tokens: 0,
-        output_tokens: 0,
-        cache_read_tokens: 0,
-        cache_write_tokens: 0,
-        reasoning_tokens: 0,
-        estimated_cost_usd: null,
-        actual_cost_usd: null,
-        billing_provider: null,
-        preview: '',
-        last_active: null,
-        messages: [userMessage],
-      }
-      setSessions(prev => [newSession, ...prev])
-      setActiveSessionId(targetId)
-    } else {
-      setSessions(prev => prev.map(s =>
-        s.id === targetId
-          ? { ...s, messages: [...s.messages, userMessage] }
-          : s
-      ))
-    }
-
-    setInput('')
-    setLoading(true)
-
-    try {
-      const res = await fetch('/api/hermes/dispatch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: promptText,
-          title: promptText.slice(0, 50),
-          kind: 'chat',
-          sideEffecting: false,
-        }),
-      })
-
-      if (!res.ok) throw new Error('Dispatch failed')
-      const json = await res.json()
-      const reqId = json.request?.id
-      if (!reqId) throw new Error('No request ID returned')
-
-      // Add thinking placeholder
-      const thinkingMsg: Message = {
-        id: Date.now() + 0.5,
-        session_id: targetId,
-        role: 'assistant',
-        content: 'Executing...',
-        timestamp: Math.floor(Date.now() / 1000),
-      }
-      setSessions(prev => prev.map(s =>
-        s.id === targetId
-          ? { ...s, messages: [...s.messages, thinkingMsg] }
-          : s
-      ))
-
-      // Poll for status
-      const pollInterval = setInterval(async () => {
-        try {
-          const statusRes = await fetch(`/api/hermes/requests/${reqId}`)
-          if (!statusRes.ok) return
-          const data = await statusRes.json()
-          const status = data.request?.status
-
-          if (status === 'done' || status === 'failed') {
-            clearInterval(pollInterval)
-            setLoading(false)
-
-            const streamRes = await fetch(`/api/hermes/requests/${reqId}/stream`)
-            let resultText = status === 'done' ? data.request?.result : (data.request?.error || 'Execution failed')
-            if (streamRes.ok) {
-              const text = await streamRes.text()
-              if (text) {
-                try {
-                  const parsed = JSON.parse(text)
-                  if (parsed.content) resultText = parsed.content
-                } catch { resultText = text }
-              }
-            }
-
-            const assistantMessage: Message = {
-              id: Date.now() + 1,
-              session_id: targetId,
-              role: 'assistant',
-              content: resultText || 'No response',
-              timestamp: Math.floor(Date.now() / 1000),
-            }
-
-            setSessions(prev => prev.map(s => {
-              if (s.id !== targetId) return s
-              const msgs = s.messages.map(m =>
-                m.id === thinkingMsg.id ? assistantMessage : m
-              )
-              return {
-                ...s,
-                messages: msgs,
-                message_count: msgs.length,
-                title: s.title === 'New Chat' ? promptText.slice(0, 50) : s.title,
-                preview: resultText || s.preview,
-                last_active: Math.floor(Date.now() / 1000),
-              }
-            }))
-          }
-        } catch (e) {
-          console.error('Poll error:', e)
-          clearInterval(pollInterval)
-          setLoading(false)
-        }
-      }, 2000)
-
-    } catch (e) {
-      console.error('Send error:', e)
-      setLoading(false)
-      const errorMsg: Message = {
-        id: Date.now() + 1,
-        session_id: targetId,
-        role: 'assistant',
-        content: 'Error: Could not send message. Check connection.',
-        timestamp: Math.floor(Date.now() / 1000),
-      }
-      setSessions(prev => prev.map(s =>
-        s.id === targetId
-          ? { ...s, messages: [...s.messages, errorMsg] }
-          : s
-      ))
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
-  }
+  const sources = [...new Set(sessions.map(s => s.source).filter(Boolean))].sort()
 
   return (
-    <div className="flex h-screen bg-[var(--bg)] text-[var(--text)]">
-      {/* Mobile sidebar overlay */}
-      {showSidebar && (
-        <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setShowSidebar(false)}>
-          <div className="absolute inset-0 bg-black/50" />
-          <div className="absolute left-0 top-0 bottom-0 w-64 bg-[var(--surface-1)] border-r border-[var(--line)]">
-            <Sidebar
-              sessions={sessions}
-              activeId={activeSessionId}
-              onSelect={setActiveSessionId}
-              onCreateNew={createNewSession}
-              onClose={() => setShowSidebar(false)}
-            />
+    <div className="flex h-[calc(100vh-3rem)] bg-[var(--bg)] text-[var(--text)]">
+      {/* ─── Sessions Sidebar ────────────────────────── */}
+      <div className="w-72 border-r border-[var(--line)] flex flex-col shrink-0 max-md:hidden">
+        <div className="p-3 border-b border-[var(--line)]">
+          <input
+            type="text" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search sessions..."
+            className="w-full px-3 py-1.5 rounded-lg bg-[var(--surface-2)] border border-[var(--line)] text-sm text-[var(--text)] placeholder-[var(--text-3)] focus:outline-none focus:border-[var(--accent)]"
+          />
+          <div className="flex gap-1 mt-2 flex-wrap">
+            <button onClick={() => setSourceFilter('')}
+              className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${!sourceFilter ? 'bg-[var(--accent)] text-black' : 'bg-[var(--surface-2)] text-[var(--text-3)] border border-[var(--line)]'}`}>
+              All
+            </button>
+            {sources.map(s => (
+              <button key={s} onClick={() => setSourceFilter(s)}
+                className={`text-[10px] px-2 py-0.5 rounded-full capitalize transition-colors ${sourceFilter === s ? 'text-white' : 'bg-[var(--surface-2)] text-[var(--text-3)] border border-[var(--line)]'}`}
+                style={sourceFilter === s ? { backgroundColor: SOURCE_COLORS[s] || '#94a3b8' } : {}}>
+                {s}
+              </button>
+            ))}
           </div>
         </div>
-      )}
-
-      {/* Desktop sidebar */}
-      <div className="hidden lg:block w-64 border-r border-[var(--line)]">
-        <Sidebar
-          sessions={sessions}
-          activeId={activeSessionId}
-          onSelect={setActiveSessionId}
-          onCreateNew={createNewSession}
-        />
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {loading && <p className="text-xs text-[var(--text-3)] p-3">Loading...</p>}
+          {sessions
+            .filter(s => !search || (s.title || s.preview || s.id).toLowerCase().includes(search.toLowerCase()))
+            .sort((a, b) => {
+              const aT = a.last_active || a.started_at
+              const bT = b.last_active || b.started_at
+              return sortOrder === 'desc' ? bT - aT : aT - bT
+            })
+            .map(s => (
+              <button key={s.id} onClick={() => setActiveId(s.id)}
+                className={`w-full text-left p-2.5 rounded-lg transition-colors ${
+                  s.id === activeId ? 'bg-[var(--accent)]15 border border-[var(--accent)]' : 'hover:bg-[var(--surface-2)]'
+                }`}>
+                <div className="flex justify-between items-start">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-medium truncate">
+                      {s.title || s.preview?.slice(0, 40) || s.id.slice(0, 12)}
+                    </div>
+                    <div className="flex gap-2 mt-0.5 text-[10px] text-[var(--text-3)] items-center flex-wrap">
+                      <SourceBadge source={s.source} />
+                      <span>{s.model || '?'}</span>
+                      <span>{s.message_count} msgs</span>
+                      <span>{timeAgo(s.started_at)}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-0.5 shrink-0 ml-1">
+                    <CostBadge cost={s.estimated_cost_usd ?? s.actual_cost_usd} />
+                    {s.ended_at ? (
+                      <span className="text-[9px] px-1 py-0.5 rounded-full bg-white/10 text-[var(--text-3)]">ended</span>
+                    ) : s.last_active && (Date.now() / 1000 - s.last_active < 300) ? (
+                      <span className="text-[9px] px-1 py-0.5 rounded-full bg-green-500/20 text-green-400">active</span>
+                    ) : null}
+                  </div>
+                </div>
+              </button>
+            ))}
+        </div>
+        <div className="p-2 border-t border-[var(--line)] flex items-center justify-between text-[10px] text-[var(--text-3)]">
+          <span>{sessions.length} sessions</span>
+          <button onClick={() => setSortOrder(p => p === 'desc' ? 'asc' : 'desc')}
+            className="flex items-center gap-1 hover:text-[var(--text)]">
+            <span style={{ transform: sortOrder === 'asc' ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>↓</span>
+            {sortOrder === 'desc' ? 'Newest' : 'Oldest'}
+          </button>
+        </div>
       </div>
 
-      {/* Main chat area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--line)] bg-[var(--surface-1)]">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setShowSidebar(true)} className="lg:hidden p-2 rounded hover:bg-[var(--surface-2)]">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <div>
-              <h1 className="font-semibold text-[var(--text)]">Hermes Chat</h1>
-              <p className="text-xs text-[var(--text-3)]">{activeSession?.title || 'Start a conversation'}</p>
+      {/* ─── Main Content ────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto">
+        {!activeId ? (
+          <div className="flex items-center justify-center h-full text-[var(--text-3)]">
+            <div className="text-center">
+              <p className="text-lg">Select a session</p>
+              <p className="text-sm mt-1">{sessions.length} sessions available</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowModelPicker(!showModelPicker)}
-              className="px-3 py-1.5 rounded-lg bg-[var(--surface-2)] border border-[var(--line)] text-xs text-[var(--text-2)] hover:border-[var(--accent)] transition-colors"
-            >
-              {AVAILABLE_MODELS.find(m => m.id === currentModel)?.name || 'Model'}
-            </button>
-          </div>
-        </div>
+        ) : !activeSession ? (
+          <div className="p-6 text-[var(--text-3)]">Loading...</div>
+        ) : (
+          <div className="p-6 space-y-6 max-w-4xl mx-auto">
+            {/* Session Header */}
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">{activeSession.title || activeSession.id.slice(0, 12)}</h2>
+                <div className="flex gap-3 mt-1 text-xs text-[var(--text-3)]">
+                  <SourceBadge source={activeSession.source} />
+                  <span>{activeSession.model || 'unknown'}</span>
+                  <span>{activeSession.message_count} msgs</span>
+                  <span>{activeSession.tool_call_count} tools</span>
+                  <span>{timeAgo(activeSession.started_at)}</span>
+                </div>
+              </div>
+              <CostBadge cost={activeSession.estimated_cost_usd ?? activeSession.actual_cost_usd} />
+            </div>
 
-        {/* Model picker dropdown */}
-        {showModelPicker && (
-          <div className="absolute right-4 top-14 z-40 w-48 bg-[var(--surface-1)] border border-[var(--line)] rounded-lg shadow-xl">
-            {AVAILABLE_MODELS.map(m => (
-              <button
-                key={m.id}
-                onClick={() => { setCurrentModel(m.id); setShowModelPicker(false) }}
-                className={`w-full text-left px-4 py-2 text-sm hover:bg-[var(--surface-2)] ${currentModel === m.id ? 'text-[var(--accent)]' : 'text-[var(--text-2)]'}`}
-              >
-                {m.name}
-                <span className="block text-xs text-[var(--text-3)]">{m.provider}</span>
-              </button>
-            ))}
+            {/* Token Usage Bar */}
+            {totalTokens > 0 && (
+              <div className="rounded-lg border border-[var(--line)] p-4 bg-[var(--surface-1)]">
+                <h3 className="text-xs font-medium mb-3 text-[var(--text-3)]">Token Usage</h3>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <TokenStat label="Input" value={activeSession.input_tokens} total={totalTokens} color="#3b82f6" />
+                  <TokenStat label="Output" value={activeSession.output_tokens} total={totalTokens} color="#22c55e" />
+                  <TokenStat label="Cache Read" value={activeSession.cache_read_tokens} total={totalTokens} color="#f59e0b" />
+                  <TokenStat label="Cache Write" value={activeSession.cache_write_tokens} total={totalTokens} color="var(--accent)" />
+                  <TokenStat label="Reasoning" value={activeSession.reasoning_tokens} total={totalTokens} color="#c084fc" />
+                </div>
+                <div className="h-2 rounded-full mt-3 flex overflow-hidden bg-[var(--bg)]">
+                  {activeSession.input_tokens > 0 && <div style={{ width: `${(activeSession.input_tokens / totalTokens) * 100}%`, backgroundColor: '#3b82f6' }} />}
+                  {activeSession.output_tokens > 0 && <div style={{ width: `${(activeSession.output_tokens / totalTokens) * 100}%`, backgroundColor: '#22c55e' }} />}
+                  {activeSession.cache_read_tokens > 0 && <div style={{ width: `${(activeSession.cache_read_tokens / totalTokens) * 100}%`, backgroundColor: '#f59e0b' }} />}
+                  {activeSession.cache_write_tokens > 0 && <div style={{ width: `${(activeSession.cache_write_tokens / totalTokens) * 100}%`, backgroundColor: 'var(--accent)' }} />}
+                  {activeSession.reasoning_tokens > 0 && <div style={{ width: `${(activeSession.reasoning_tokens / totalTokens) * 100}%`, backgroundColor: '#c084fc' }} />}
+                </div>
+              </div>
+            )}
+
+            {/* Messages */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-[var(--text-3)]">
+                  Messages {messages ? `(${messages.length})` : ''}
+                </h3>
+                <button onClick={() => setSortOrder(p => p === 'asc' ? 'desc' : 'asc')}
+                  className="text-[10px] px-2 py-1 rounded flex items-center gap-1 bg-[var(--surface-1)] text-[var(--text-3)]">
+                  {sortOrder === 'asc' ? '↑ Oldest first' : '↓ Newest first'}
+                </button>
+              </div>
+              {msgLoading && <p className="text-sm text-[var(--text-3)]">Loading messages...</p>}
+              {(sortOrder === 'desc' ? [...messages].reverse() : messages).map(m => (
+                <div key={m.id} className="rounded-lg border border-[var(--line)] p-3 bg-[var(--surface-1)]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <RoleBadge role={m.role} />
+                    {m.tool_name && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--bg)] text-amber-400">
+                        {m.tool_name}
+                      </span>
+                    )}
+                    <span className="text-[10px] ml-auto text-[var(--text-3)]">
+                      {new Date(m.timestamp * 1000).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  {m.content && <MessageContent content={m.content} role={m.role} />}
+                  {!!m.tool_calls && (
+                    <details className="mt-2">
+                      <summary className="text-[10px] cursor-pointer text-[var(--accent)]">
+                        Tool calls ({Array.isArray(m.tool_calls) ? (m.tool_calls as unknown[]).length : 1})
+                      </summary>
+                      <pre className="text-[10px] mt-1 p-2 rounded overflow-x-auto font-mono bg-[var(--bg)]">
+                        {JSON.stringify(m.tool_calls, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {activeSession?.messages && activeSession.messages.length > 0 ? (
-            <SessionDetail
-              sessionId={activeSessionId}
-              session={activeSession}
-              messages={activeSession.messages}
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-[var(--text-3)]">
-              <svg className="w-12 h-12 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
-              <p className="text-sm">Start a conversation with Hermes</p>
-              <p className="text-xs mt-1">Type a message to get started</p>
-            </div>
-          )}
-          {loading && (
-            <div className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-3)]">
-              <div className="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
-              Hermes is thinking...
-            </div>
-          )}
-        </div>
-
-        {/* Input area */}
-        <div className="border-t border-[var(--line)] p-4 bg-[var(--surface-1)]">
-          <div className="flex gap-2 max-w-4xl mx-auto">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message..."
-              className="flex-1 bg-[var(--surface-2)] border border-[var(--line)] rounded-lg px-4 py-2 text-sm text-[var(--text)] placeholder-[var(--text-3)] focus:outline-none focus:border-[var(--accent)]"
-            />
-            <button
-              onClick={sendMessage}
-              disabled={!input.trim() || loading}
-              className="px-4 py-2 bg-[var(--accent)] text-black rounded-lg font-medium text-sm disabled:opacity-50 hover:opacity-90 transition-opacity"
-            >
-              Send
-            </button>
-          </div>
-          <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
-            {['Check status', 'List tasks', 'What time is it', 'Help'].map(cmd => (
-              <button
-                key={cmd}
-                onClick={() => setInput(cmd)}
-                className="px-2 py-1 rounded bg-[var(--surface-2)] text-[var(--text-3)] text-xs hover:text-[var(--text)] whitespace-nowrap"
-              >
-                {cmd}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   )

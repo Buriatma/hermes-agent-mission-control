@@ -267,6 +267,46 @@ model DataStore {
 
 // ─── Daily Briefs ───────────────────────────────────────────────
 
+
+model HermesSession {
+  id                   String   @id
+  source               String?
+  model                String?
+  title                String?
+  started_at           Float
+  ended_at             Float?
+  end_reason           String?
+  message_count        Int      @default(0)
+  tool_call_count      Int      @default(0)
+  input_tokens         Int      @default(0)
+  output_tokens        Int      @default(0)
+  cache_read_tokens    Int      @default(0)
+  cache_write_tokens   Int      @default(0)
+  reasoning_tokens     Int      @default(0)
+  estimated_cost_usd   Float?
+  actual_cost_usd      Float?
+  billing_provider     String?
+  preview              String?
+  last_active          Float?
+  synced_at            DateTime @default(now())
+
+  messages             HermesMessage[]
+}
+
+model HermesMessage {
+  id              Int     @id
+  session_id      String
+  role            String
+  content         String?
+  tool_call_id    String?
+  tool_calls      String?
+  tool_name       String?
+  timestamp       Float
+  token_count     Int?
+  finish_reason   String?
+  session         HermesSession @relation(fields: [session_id], references: [id])
+}
+
 model Brief {
   id        String   @id @default(cuid())
   date      String   @unique
