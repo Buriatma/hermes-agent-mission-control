@@ -361,7 +361,13 @@ async function mirrorFiles() {
         try {
           const stat = fs.statSync(full);
           const parentRel = path.dirname(rel);
-          entries.push({ name: item.name, path: rel, type: item.isDirectory() ? "dir" : "file", size: stat.size, updatedAt: stat.mtime.toISOString(), parent: (parentRel === "." || parentRel === "/") ? null : parentRel });
+          let content = null;
+          if (!item.isDirectory() && stat.size < 50 * 1024) {
+            try {
+              content = fs.readFileSync(full, "utf8");
+            } catch {}
+          }
+          entries.push({ name: item.name, path: rel, type: item.isDirectory() ? "dir" : "file", size: stat.size, updatedAt: stat.mtime.toISOString(), parent: (parentRel === "." || parentRel === "/") ? null : parentRel, content });
           if (item.isDirectory()) walk(full, depth + 1);
         } catch {}
       }
@@ -378,12 +384,12 @@ async function mirrorFiles() {
       const params = [];
       let idx = 1;
       for (const e of batch) {
-        values.push(`($${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},now())`);
-        params.push(e.path, e.name, e.type, e.size || null, e.parent, e.updatedAt);
+        values.push(`($${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++},$${idx++})`);
+        params.push(e.path, e.name, e.type, e.size || null, e.parent, e.updatedAt, e.content || null, new Date().toISOString());
       }
-      const sql = `INSERT INTO "HermesFile" (path,name,type,size,parent,"updatedAt","syncedAt")
+      const sql = `INSERT INTO "HermesFile" (path,name,type,size,parent,"updatedAt",content,"syncedAt")
         VALUES ${values.join(",")}
-        ON CONFLICT (path) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type, size=EXCLUDED.size, parent=EXCLUDED.parent, "updatedAt"=EXCLUDED."updatedAt", "syncedAt"=now()`;
+        ON CONFLICT (path) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type, size=EXCLUDED.size, parent=EXCLUDED.parent, "updatedAt"=EXCLUDED."updatedAt", content=EXCLUDED.content, "syncedAt"=EXCLUDED."syncedAt"`;
       try { await q(sql, params); } catch (err) { log("mirrorFiles batch err", err.message); }
       // Yield to event loop between batches
       await new Promise(r => setTimeout(r, 10));
