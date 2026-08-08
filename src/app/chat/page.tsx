@@ -640,12 +640,12 @@ export default function ChatPage() {
                       e.preventDefault()
                       sendMessage()
                     }
-                    if (e.key === '/' && !e.metaKey && !e.ctrlKey && document.activeElement === inputRef.current) {
-                      // Don't trigger if already typing slash
+                    if (e.key === '/' && !e.metaKey && !e.ctrlKey) {
+                      e.preventDefault()
+                      setShowCommands(true)
                     }
                   }}
                   onFocus={() => { if (input.startsWith('/')) setShowCommands(true) }}
-                  onChange={e => { setInput(e.target.value); if (e.target.value.startsWith('/')) setShowCommands(true) }}
                   placeholder="Message Hermes... (/ for commands)"
                   rows={1}
                   className="w-full px-4 py-3 pr-10 rounded-2xl text-[13px] text-[var(--text)] bg-[var(--surface-1)] border border-[var(--line)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/50 placeholder-[var(--text-3)] resize-none transition-all"
