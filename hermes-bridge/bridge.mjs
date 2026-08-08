@@ -420,6 +420,7 @@ async function mirrorTick() {
   try { await maybeDailyBrief(); } catch (e) { log("maybeDailyBrief err", e.message); }
   try { mirrorSessions(); } catch (e) { log("mirrorSessions err", e.message); }
   try { mirrorFiles(); } catch (e) { log("mirrorFiles err", e.message); }
+  try { mirrorGit(); } catch (e) { log("mirrorGit err", e.message); }
 }
 
 async function main() {
