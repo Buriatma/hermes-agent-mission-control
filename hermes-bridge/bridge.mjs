@@ -360,7 +360,8 @@ async function mirrorFiles() {
         if (!ALLOWED.some(a => rel.startsWith(a))) continue;
         try {
           const stat = fs.statSync(full);
-          entries.push({ name: item.name, path: rel, type: item.isDirectory() ? "dir" : "file", size: stat.size, updatedAt: stat.mtime.toISOString(), parent: path.dirname(rel).slice(ROOT_DIR.length + 1) || null });
+          const parentRel = path.dirname(rel);
+          entries.push({ name: item.name, path: rel, type: item.isDirectory() ? "dir" : "file", size: stat.size, updatedAt: stat.mtime.toISOString(), parent: (parentRel === "." || parentRel === "/") ? null : parentRel });
           if (item.isDirectory()) walk(full, depth + 1);
         } catch {}
       }
