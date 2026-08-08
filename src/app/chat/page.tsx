@@ -16,6 +16,8 @@ interface Message {
   tool_name: string | null; tool_calls: unknown; timestamp: number
 }
 
+type ReqStatus = '' | 'queued' | 'running' | 'done' | 'failed'
+
 const SOURCE_COLORS: Record<string, string> = {
   telegram: '#0088cc', buzz: '#00ff88', cli: '#f59e0b', api_server: '#8b5cf6',
   subagent: '#ef4444', tui: '#06b6d4', webui: '#ec4899', desktop: '#10b981',
@@ -49,7 +51,6 @@ function SourceBadge({ source }: { source: string }) {
 function MessageContent({ content, role }: { content: string; role: string }) {
   if (!content) return null
   const isUser = role === 'user'
-  // Simple markdown-like rendering
   const lines = content.split('\n')
   return (
     <div className={`text-[13px] leading-relaxed whitespace-pre-wrap break-words ${isUser ? '' : 'prose prose-invert prose-sm max-w-none'}`}>
@@ -59,6 +60,29 @@ function MessageContent({ content, role }: { content: string; role: string }) {
         if (line.startsWith('- ')) return <div key={i} className="flex gap-1.5 ml-2"><span className="text-[var(--accent)]">•</span><span>{line.slice(2)}</span></div>
         return <span key={i}>{line}{i < lines.length - 1 ? <br /> : null}</span>
       })}
+    </div>
+  )
+}
+
+/** Typing indicator with status-specific text */
+function TypingIndicator({ status }: { status: ReqStatus }) {
+  const labels: Record<string, string> = {
+    queued: 'Queued — waiting for Hermes...',
+    running: 'Hermes is working...',
+    '': 'Hermes thinking...',
+  }
+  return (
+    <div className="flex justify-start">
+      <div className="bg-[var(--surface-2)] border border-[var(--line)] rounded-2xl rounded-bl-md px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="flex gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '300ms' }} />
+          </span>
+          <span className="text-[12px] text-[var(--text-3)]">{labels[status] || labels['']}</span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -75,9 +99,13 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [reqId, setReqId] = useState<string>('')
+  const [reqStatus, setReqStatus] = useState<ReqStatus>('')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const endRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const sseRef = useRef<EventSource | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
 
   const loadSessions = useCallback(async () => {
     try {
@@ -105,14 +133,105 @@ export default function ChatPage() {
       .catch(() => setMsgLoading(false))
   }, [activeId])
 
-  // Auto-scroll
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [messages, sending])
+  // Auto-scroll when new messages arrive or during sending
+  useEffect(() => {
+    if (autoScroll) {
+      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
+  }, [messages, sending, autoScroll])
+
+  // Detect manual scroll to disable auto-scroll
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+      setAutoScroll(atBottom)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Cleanup SSE on unmount
+  useEffect(() => {
+    return () => {
+      if (sseRef.current) {
+        sseRef.current.close()
+        sseRef.current = null
+      }
+    }
+  }, [])
+
+  const connectSSE = useCallback((requestId: string) => {
+    // Close any existing connection
+    if (sseRef.current) {
+      sseRef.current.close()
+      sseRef.current = null
+    }
+
+    const es = new EventSource(`/api/hermes/requests/${requestId}/stream`)
+    sseRef.current = es
+
+    es.addEventListener('status', (e) => {
+      try {
+        const d = JSON.parse(e.data)
+        setReqStatus(d.status || '')
+      } catch { /* ignore parse errors */ }
+    })
+
+    es.addEventListener('result', (e) => {
+      try {
+        const d = JSON.parse(e.data)
+        if (d.status === 'done' && d.result) {
+          // Result received — fetch updated messages
+          setSending(false)
+          setReqStatus('done')
+          loadSessions()
+          // Find and load the latest session
+          fetch('/api/hermes/sessions?limit=1')
+            .then(r => r.json())
+            .then(sd => {
+              const latest = sd.sessions?.[0]
+              if (latest) {
+                setActiveId(latest.id)
+                fetch(`/api/hermes/sessions/${latest.id}`)
+                  .then(r => r.json())
+                  .then(md => {
+                    setMessages(md.messages || [])
+                    setAutoScroll(true)
+                  })
+              }
+            })
+        } else if (d.status === 'failed') {
+          setSending(false)
+          setReqStatus('failed')
+          loadSessions()
+        }
+      } catch { /* ignore */ }
+    })
+
+    es.addEventListener('done', () => {
+      es.close()
+      sseRef.current = null
+    })
+
+    es.onerror = () => {
+      // EventSource auto-reconnects. If it gives up, close and rely on
+      // the next SSE event cycle.
+      if (es.readyState === EventSource.CLOSED) {
+        sseRef.current = null
+      }
+    }
+  }, [loadSessions])
 
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || sending) return
     setInput('')
     setSending(true)
+    setReqStatus('queued')
+    setAutoScroll(true)
+
     try {
       const res = await fetch('/api/hermes/dispatch', {
         method: 'POST',
@@ -121,34 +240,16 @@ export default function ChatPage() {
       })
       const d = await res.json()
       const id = d.request?.id
-      if (!id) { setSending(false); return }
+      if (!id) { setSending(false); setReqStatus(''); return }
       setReqId(id)
       loadSessions()
-      const poll = setInterval(async () => {
-        try {
-          const r = await fetch(`/api/hermes/requests/${id}`)
-          const dd = await r.json()
-          const st = dd.request?.status
-          if (st === 'done' || st === 'failed') {
-            clearInterval(poll)
-            setSending(false)
-            loadSessions()
-            // Find the new session and load it
-            const sr = await fetch('/api/hermes/sessions?limit=1')
-            const sd = await sr.json()
-            const latest = sd.sessions?.[0]
-            if (latest) {
-              setActiveId(latest.id)
-              const mr = await fetch(`/api/hermes/sessions/${latest.id}`)
-              const md = await mr.json()
-              setMessages(md.messages || [])
-            }
-          }
-        } catch { }
-      }, 3000)
-      setTimeout(() => clearInterval(poll), 300000)
-    } catch (e) { console.error(e); setSending(false) }
-  }, [input, sending, loadSessions])
+      connectSSE(id)
+    } catch (e) {
+      console.error(e)
+      setSending(false)
+      setReqStatus('')
+    }
+  }, [input, sending, loadSessions, connectSSE])
 
   const activeSession = sessions.find(s => s.id === activeId)
   const totalTokens = activeSession ? (activeSession.input_tokens + activeSession.output_tokens + activeSession.cache_read_tokens + activeSession.cache_write_tokens + activeSession.reasoning_tokens) : 0
@@ -247,12 +348,12 @@ export default function ChatPage() {
         )}
 
         {/* Messages area */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
           {msgLoading ? (
             <div className="flex items-center justify-center h-full text-[var(--text-3)]">
               <span className="animate-pulse">Loading messages...</span>
             </div>
-          ) : messages.length === 0 ? (
+          ) : messages.length === 0 && !sending ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <p className="text-2xl mb-2">🤖</p>
@@ -290,20 +391,7 @@ export default function ChatPage() {
                   </div>
                 </div>
               ))}
-              {sending && (
-                <div className="flex justify-start">
-                  <div className="bg-[var(--surface-2)] border border-[var(--line)] rounded-2xl rounded-bl-md px-4 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="flex gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-bounce" style={{ animationDelay: '300ms' }} />
-                      </span>
-                      <span className="text-[12px] text-[var(--text-3)]">Hermes thinking...</span>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {sending && <TypingIndicator status={reqStatus} />}
               <div ref={endRef} />
             </div>
           )}

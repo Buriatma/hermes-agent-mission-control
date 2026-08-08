@@ -1,52 +1,121 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
-const prisma = new PrismaClient();
+// SSE endpoint that streams real-time request status updates.
+// Each invocation polls DB and pushes status changes, then disconnects
+// after ~8s so Vercel serverless doesn't time out. The browser
+// EventSource auto-reconnects, creating a continuous stream.
+// Terminal states (done/failed) send the final result and close permanently.
 
-// SSE endpoint that streams Hermes execution results in real-time
-function* sendMessageStream(message: string) {
-  // Send initial event
-  yield `${JSON.stringify({ type: "message", content: message })}\n\n`;
-}
+const POLL_INTERVAL_MS = 1500;
+const MAX_STREAM_MS = 8000; // stay under Vercel 10s limit
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  // Only allow streaming for completed requests (bridge gives final result)
-  // We stream the full result rather than tokens (simpler, more reliable)
   try {
     const { id } = await params;
-    const request = await prisma.agentRequest.findUnique({
-      where: { id },
-    });
 
+    // Verify request exists
+    const request = await prisma.agentRequest.findUnique({ where: { id } });
     if (!request) {
       return NextResponse.json({ error: "Request not found" }, { status: 404 });
     }
 
-    if (request.status === "failed") {
-      return NextResponse.json({ error: request.error || "Execution failed" }, { status: 500 });
-    }
-
-    if (request.status !== "done" && request.status !== "completed") {
-      return NextResponse.json({ error: "Request still in progress", status: request.status }, { status: 202 });
-    }
-
     const encoder = new TextEncoder();
-
     const stream = new ReadableStream({
       async start(controller) {
-        try {
-          // Send the complete result in one chunk
-          const chunk = encoder.encode(
-            `${JSON.stringify({ type: "message", content: request.result || "" })}\n\n`
-          );
-          controller.enqueue(chunk);
+        const send = (event: string, data: unknown) => {
+          try {
+            const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+            controller.enqueue(encoder.encode(payload));
+          } catch { /* client disconnected */ }
+        };
+
+        let lastStatus = request.status;
+        let lastError = request.error;
+        let lastResult = request.result;
+        const started = Date.now();
+
+        // Send initial status immediately
+        send("status", {
+          status: request.status,
+          error: request.error,
+        });
+
+        // Terminal states — send final data and close
+        if (request.status === "done" || request.status === "completed") {
+          send("result", {
+            status: "done",
+            result: request.result || "",
+          });
+          send("done", { status: "done" });
           controller.close();
-        } catch (err) {
-          controller.error(err);
+          return;
         }
+
+        if (request.status === "failed") {
+          send("result", {
+            status: "failed",
+            error: request.error || "Request failed",
+          });
+          send("done", { status: "failed" });
+          controller.close();
+          return;
+        }
+
+        // Poll for status changes until terminal or timeout
+        while (Date.now() - started < MAX_STREAM_MS) {
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+
+          try {
+            const fresh = await prisma.agentRequest.findUnique({ where: { id } });
+            if (!fresh) break;
+
+            // Push event on status change
+            if (fresh.status !== lastStatus) {
+              lastStatus = fresh.status;
+              lastError = fresh.error;
+              send("status", {
+                status: fresh.status,
+                error: fresh.error,
+              });
+            }
+
+            // Terminal — send result and close
+            if (fresh.status === "done" || fresh.status === "completed") {
+              send("result", {
+                status: "done",
+                result: fresh.result || "",
+              });
+              send("done", { status: "done" });
+              controller.close();
+              return;
+            }
+
+            if (fresh.status === "failed") {
+              send("result", {
+                status: "failed",
+                error: fresh.error || "Request failed",
+              });
+              send("done", { status: "failed" });
+              controller.close();
+              return;
+            }
+          } catch {
+            // DB query failed, keep retrying
+          }
+        }
+
+        // Timeout — send current status, client will reconnect
+        send("status", {
+          status: lastStatus,
+          error: lastError,
+          timeout: true,
+        });
+        send("done", { status: "timeout" });
+        controller.close();
       },
     });
 
@@ -56,9 +125,13 @@ export async function GET(
         "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
         "Access-Control-Allow-Origin": "*",
+        "X-Accel-Buffering": "no",
       },
     });
   } catch (error) {
-    return NextResponse.json({ error: "Failed to stream response" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to stream response" },
+      { status: 500 }
+    );
   }
 }
