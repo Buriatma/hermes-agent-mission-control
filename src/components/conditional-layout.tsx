@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/sidebar';
 import { CommandPalette } from '@/components/command-palette';
+import { KeyboardShortcuts } from '@/components/keyboard-shortcuts';
 
 export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -24,6 +25,7 @@ export function ConditionalLayout({ children }: { children: React.ReactNode }) {
         </div>
       </main>
       <CommandPalette />
+      <KeyboardShortcuts />
     </div>
   );
 }
