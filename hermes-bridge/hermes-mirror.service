@@ -1,0 +1,15 @@
+# Hermes Session Mirror — sync state.db → Neon (hourly, host-level)
+# Runs on the HOST (not in container) because better-sqlite3 + state.db live at /opt/data
+[Unit]
+Description=Hermes state.db → Neon session mirror
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/data/home/hermes-agent-mission-control/hermes-bridge
+Environment=DATABASE_URL=postgresql://neondb_owner:npg_eodiEZHkpT91@ep-frosty-waterfall-azg2ykg6-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+ExecStart=/usr/bin/node /opt/data/home/hermes-agent-mission-control/hermes-bridge/mirror-sessions.mjs
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target
