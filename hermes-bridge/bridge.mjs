@@ -378,6 +378,18 @@ function mirrorFiles() {
   } catch (e) { log("mirrorFiles err", e.message); }
 }
 
+/* ─────────────── Mirror: Git commits → Neon ─────────────── */
+async function mirrorGit() {
+  try {
+    const out = await execFileP("git", ["-C", "/opt/data/home/hermes-agent-mission-control", "log", "--oneline", "-20"]);
+    const commits = out.trim().split("\n").filter(Boolean).map(line => {
+      const [hash, ...rest] = line.split(" ");
+      return { hash: hash.slice(0, 7), message: rest.join(" ").slice(0, 200) };
+    });
+    await setStore("hermes-git", { commits, syncedAt: new Date().toISOString() });
+  } catch (e) { log("mirrorGit err", e.message); }
+}
+
 /* ─────────────── Mirror: state.db → Neon ─────────────── */
 function mirrorSessions() {
   if (!fs.existsSync(STATE_DB)) return;
