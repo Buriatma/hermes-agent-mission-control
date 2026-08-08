@@ -343,7 +343,7 @@ async function processQueue() {
 
 
 /* ─────────────── Mirror: VPS files → Neon ─────────────── */
-function mirrorFiles() {
+async function mirrorFiles() {
   const ROOT_DIR = "/opt/data";
   const ALLOWED = ["obsidian-vault", "home", "scripts", "config.yaml", "KNOWLEDGE", "skills"];
   const entries = [];
@@ -369,15 +369,18 @@ function mirrorFiles() {
   
   try {
     walk(ROOT_DIR, 0);
+    log("mirrorFiles: found", entries.length, "entries, inserting...");
     for (const e of entries) {
-      q(`INSERT INTO "HermesFile" (path, name, type, size, parent, "updatedAt", "syncedAt")
-         VALUES ($1,$2,$3,$4,$5,$6,now())
-         ON CONFLICT (path) DO UPDATE SET name=$2, type=$3, size=$4, parent=$5, "updatedAt"=$6, "syncedAt"=now()`,
-        [e.path, e.name, e.type, e.size || null, e.parent, e.updatedAt]);
+      try {
+        await q(`INSERT INTO "HermesFile" (path, name, type, size, parent, "updatedAt", "syncedAt")
+           VALUES ($1,$2,$3,$4,$5,$6,now())
+           ON CONFLICT (path) DO UPDATE SET name=$2, type=$3, size=$4, parent=$5, "updatedAt"=$6, "syncedAt"=now()`,
+          [e.path, e.name, e.type, e.size || null, e.parent, e.updatedAt]);
+      } catch (err) { log("mirrorFiles insert err", e.path, err.message); }
     }
-    // Remove deleted files
-    q(`DELETE FROM "HermesFile" WHERE "syncedAt" < now() - interval '2 minutes'`);
-    log("mirrorFiles:", entries.length, "entries");
+    // Remove files not seen in this sync
+    await q(`DELETE FROM "HermesFile" WHERE "syncedAt" < now() - interval '5 minutes'`);
+    log("mirrorFiles: synced", entries.length, "entries");
   } catch (e) { log("mirrorFiles err", e.message); }
 }
 
@@ -434,7 +437,7 @@ async function mirrorTick() {
   try { await mirrorCost(); } catch (e) { log("mirrorCost err", e.message); }
   try { await maybeDailyBrief(); } catch (e) { log("maybeDailyBrief err", e.message); }
   try { mirrorSessions(); } catch (e) { log("mirrorSessions err", e.message); }
-  try { mirrorFiles(); } catch (e) { log("mirrorFiles err", e.message); }
+  try { await mirrorFiles(); } catch (e) { log("mirrorFiles err", e.message); }
   try { mirrorGit(); } catch (e) { log("mirrorGit err", e.message); }
 }
 
