@@ -283,9 +283,14 @@ async function runRequest(r) {
 }
 
 async function processQueue() {
-  const { rows } = await q(
-    `SELECT * FROM \"AgentRequest\" WHERE status IN ('queued','approved','approved_oneshot') ORDER BY \"createdAt\" ASC LIMIT 3`
-  );
+  let rows = [];
+  try {
+    const r = await q(
+      `SELECT * FROM \"AgentRequest\" WHERE status IN ('queued','approved','approved_oneshot') ORDER BY \"createdAt\" ASC LIMIT 3`
+    );
+    rows = r.rows;
+  } catch (e) { log("processQueue query err", e.message); return; }
+  log("processQueue: found", rows.length, "pending");
   for (const r of rows) await runRequest(r);
 }
 
