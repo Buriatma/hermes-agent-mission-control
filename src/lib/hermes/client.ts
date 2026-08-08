@@ -43,7 +43,7 @@ export const api = {
   health: () => request<{ status: string; online: boolean }>('/health'),
   
   // List requests as sessions
-  sessions: (params?: { limit?: number }) => 
+  sessions: (params?: { limit?: number }) =>
     request<{ requests: SessionSummary[] }>('/requests'),
   
   // Dispatch - create a new request

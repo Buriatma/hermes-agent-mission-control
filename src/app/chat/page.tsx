@@ -5,7 +5,6 @@ import type { Message, SessionSummary } from '@/lib/hermes/types'
 import { SessionDetail } from '@/components/chat/SessionDetail'
 import { Sidebar } from '@/components/layout/Sidebar'
 
-// Available models
 const AVAILABLE_MODELS = [
   { id: "best-long-context", name: "GLM-4.7", provider: "9router" },
   { id: "custom:9router", name: "9Router Router", provider: "9router" },
@@ -25,19 +24,74 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false)
   const [showSidebar, setShowSidebar] = useState(false)
   const [showModelPicker, setShowModelPicker] = useState(false)
-
   const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0]
 
-  // Initialize with empty session
+  // Load sessions from DB on mount
   useEffect(() => {
-    if (sessions.length === 0) {
-      createNewSession()
-    }
+    loadSessions()
   }, [])
+
+  const loadSessions = async () => {
+    try {
+      const data = await api.sessions({ limit: 50 })
+      const mappedSessions: ChatSession[] = data.requests
+        .filter((r: any) => r.kind === 'chat' || r.kind === 'oneshot')
+        .map((r: any) => ({
+          id: r.id,
+          source: r.origin || 'web',
+          model: null,
+          title: r.title || r.prompt?.slice(0, 50) || 'Untitled',
+          started_at: r.createdAt ? Math.floor(new Date(r.createdAt).getTime() / 1000) : Math.floor(Date.now() / 1000),
+          ended_at: r.finishedAt ? Math.floor(new Date(r.finishedAt).getTime() / 1000) : null,
+          end_reason: r.status === 'done' ? 'completed' : r.status === 'failed' ? 'failed' : null,
+          message_count: 2,
+          tool_call_count: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          reasoning_tokens: 0,
+          estimated_cost_usd: null,
+          actual_cost_usd: null,
+          billing_provider: null,
+          preview: r.result || r.prompt || '',
+          last_active: r.updatedAt ? Math.floor(new Date(r.updatedAt).getTime() / 1000) : null,
+          messages: [
+            ...(r.prompt ? [{
+              id: 1,
+              session_id: r.id,
+              role: 'user',
+              content: r.prompt,
+              timestamp: r.createdAt ? Math.floor(new Date(r.createdAt).getTime() / 1000) : 0,
+            }] : []),
+            ...(r.result ? [{
+              id: 2,
+              session_id: r.id,
+              role: 'assistant',
+              content: r.result,
+              timestamp: r.finishedAt ? Math.floor(new Date(r.finishedAt).getTime() / 1000) : 0,
+            }] : []),
+            ...(r.error && !r.result ? [{
+              id: 2,
+              session_id: r.id,
+              role: 'assistant',
+              content: `Error: ${r.error}`,
+              timestamp: r.finishedAt ? Math.floor(new Date(r.finishedAt).getTime() / 1000) : 0,
+            }] : []),
+          ],
+        }))
+      setSessions(mappedSessions)
+      if (mappedSessions.length > 0 && !activeSessionId) {
+        setActiveSessionId(mappedSessions[0].id)
+      }
+    } catch (e) {
+      console.error('Failed to load sessions:', e)
+    }
+  }
 
   const createNewSession = () => {
     const newSession: ChatSession = {
-      id: Date.now().toString(),
+      id: 'new-' + Date.now(),
       source: 'web',
       model: currentModel,
       title: 'New Chat',
@@ -58,34 +112,61 @@ export default function ChatPage() {
       last_active: null,
       messages: [],
     }
-    setSessions([newSession])
+    setSessions(prev => [newSession, ...prev])
     setActiveSessionId(newSession.id)
   }
 
   const sendMessage = async () => {
-    if (!input.trim() || loading || !activeSessionId) return
+    if (!input.trim() || loading) return
+    const targetId = activeSessionId || 'new-' + Date.now()
+    const promptText = input
 
     const userMessage: Message = {
       id: Date.now(),
-      session_id: activeSessionId,
+      session_id: targetId,
       role: 'user',
-      content: input,
+      content: promptText,
       timestamp: Math.floor(Date.now() / 1000),
     }
 
-    // Add user message immediately
-    setSessions(prev => prev.map(s => 
-      s.id === activeSessionId 
-        ? { ...s, messages: [...s.messages, userMessage] }
-        : s
-    ))
+    // If no active session yet (new session), create it
+    if (!activeSessionId) {
+      const newSession: ChatSession = {
+        id: targetId,
+        source: 'web',
+        model: currentModel,
+        title: promptText.slice(0, 50),
+        started_at: Math.floor(Date.now() / 1000),
+        ended_at: null,
+        end_reason: null,
+        message_count: 0,
+        tool_call_count: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
+        reasoning_tokens: 0,
+        estimated_cost_usd: null,
+        actual_cost_usd: null,
+        billing_provider: null,
+        preview: '',
+        last_active: null,
+        messages: [userMessage],
+      }
+      setSessions(prev => [newSession, ...prev])
+      setActiveSessionId(targetId)
+    } else {
+      setSessions(prev => prev.map(s =>
+        s.id === targetId
+          ? { ...s, messages: [...s.messages, userMessage] }
+          : s
+      ))
+    }
 
-    const promptText = input
     setInput('')
     setLoading(true)
 
     try {
-      // Dispatch to Hermes via our bridge
       const res = await fetch('/api/hermes/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -98,24 +179,20 @@ export default function ChatPage() {
       })
 
       if (!res.ok) throw new Error('Dispatch failed')
-      
       const json = await res.json()
       const reqId = json.request?.id
-
-      if (!reqId) {
-        throw new Error('No request ID returned')
-      }
+      if (!reqId) throw new Error('No request ID returned')
 
       // Add thinking placeholder
       const thinkingMsg: Message = {
         id: Date.now() + 0.5,
-        session_id: activeSessionId,
+        session_id: targetId,
         role: 'assistant',
         content: 'Executing...',
         timestamp: Math.floor(Date.now() / 1000),
       }
-      setSessions(prev => prev.map(s => 
-        s.id === activeSessionId 
+      setSessions(prev => prev.map(s =>
+        s.id === targetId
           ? { ...s, messages: [...s.messages, thinkingMsg] }
           : s
       ))
@@ -125,7 +202,6 @@ export default function ChatPage() {
         try {
           const statusRes = await fetch(`/api/hermes/requests/${reqId}`)
           if (!statusRes.ok) return
-
           const data = await statusRes.json()
           const status = data.request?.status
 
@@ -133,30 +209,39 @@ export default function ChatPage() {
             clearInterval(pollInterval)
             setLoading(false)
 
-            // Get result from stream
             const streamRes = await fetch(`/api/hermes/requests/${reqId}/stream`)
-            let resultText = status === 'done' ? data.request?.result : 'Execution failed'
-            
+            let resultText = status === 'done' ? data.request?.result : (data.request?.error || 'Execution failed')
             if (streamRes.ok) {
               const text = await streamRes.text()
-              if (text) resultText = text
+              if (text) {
+                try {
+                  const parsed = JSON.parse(text)
+                  if (parsed.content) resultText = parsed.content
+                } catch { resultText = text }
+              }
             }
 
-            // Replace thinking message with actual response
             const assistantMessage: Message = {
               id: Date.now() + 1,
-              session_id: activeSessionId,
+              session_id: targetId,
               role: 'assistant',
-              content: resultText,
+              content: resultText || 'No response',
               timestamp: Math.floor(Date.now() / 1000),
             }
 
             setSessions(prev => prev.map(s => {
-              if (s.id !== activeSessionId) return s
-              const msgs = s.messages.map(m => 
+              if (s.id !== targetId) return s
+              const msgs = s.messages.map(m =>
                 m.id === thinkingMsg.id ? assistantMessage : m
               )
-              return { ...s, messages: msgs, message_count: msgs.length }
+              return {
+                ...s,
+                messages: msgs,
+                message_count: msgs.length,
+                title: s.title === 'New Chat' ? promptText.slice(0, 50) : s.title,
+                preview: resultText || s.preview,
+                last_active: Math.floor(Date.now() / 1000),
+              }
             }))
           }
         } catch (e) {
@@ -169,16 +254,15 @@ export default function ChatPage() {
     } catch (e) {
       console.error('Send error:', e)
       setLoading(false)
-      // Add error message
       const errorMsg: Message = {
         id: Date.now() + 1,
-        session_id: activeSessionId,
+        session_id: targetId,
         role: 'assistant',
-        content: 'Error: Could not send message.',
+        content: 'Error: Could not send message. Check connection.',
         timestamp: Math.floor(Date.now() / 1000),
       }
-      setSessions(prev => prev.map(s => 
-        s.id === activeSessionId 
+      setSessions(prev => prev.map(s =>
+        s.id === targetId
           ? { ...s, messages: [...s.messages, errorMsg] }
           : s
       ))
@@ -199,12 +283,12 @@ export default function ChatPage() {
         <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setShowSidebar(false)}>
           <div className="absolute inset-0 bg-black/50" />
           <div className="absolute left-0 top-0 bottom-0 w-64 bg-[var(--surface-1)] border-r border-[var(--line)]">
-            <Sidebar 
-              sessions={sessions} 
-              activeId={activeSessionId} 
-              onSelect={setActiveSessionId} 
-              onCreateNew={createNewSession} 
-              onClose={() => setShowSidebar(false)} 
+            <Sidebar
+              sessions={sessions}
+              activeId={activeSessionId}
+              onSelect={setActiveSessionId}
+              onCreateNew={createNewSession}
+              onClose={() => setShowSidebar(false)}
             />
           </div>
         </div>
@@ -212,11 +296,11 @@ export default function ChatPage() {
 
       {/* Desktop sidebar */}
       <div className="hidden lg:block w-64 border-r border-[var(--line)]">
-        <Sidebar 
-          sessions={sessions} 
-          activeId={activeSessionId} 
-          onSelect={setActiveSessionId} 
-          onCreateNew={createNewSession} 
+        <Sidebar
+          sessions={sessions}
+          activeId={activeSessionId}
+          onSelect={setActiveSessionId}
+          onCreateNew={createNewSession}
         />
       </div>
 
@@ -231,13 +315,12 @@ export default function ChatPage() {
               </svg>
             </button>
             <div>
-              <h1 className="font-semibold text-[var(--text)]">GlyteOS Chat</h1>
-              <p className="text-xs text-[var(--text-3)]">Powered by Hermes Agent</p>
+              <h1 className="font-semibold text-[var(--text)]">Hermes Chat</h1>
+              <p className="text-xs text-[var(--text-3)]">{activeSession?.title || 'Start a conversation'}</p>
             </div>
           </div>
-          
           <div className="flex items-center gap-2">
-            <button 
+            <button
               onClick={() => setShowModelPicker(!showModelPicker)}
               className="px-3 py-1.5 rounded-lg bg-[var(--surface-2)] border border-[var(--line)] text-xs text-[var(--text-2)] hover:border-[var(--accent)] transition-colors"
             >
@@ -265,10 +348,10 @@ export default function ChatPage() {
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4">
           {activeSession?.messages && activeSession.messages.length > 0 ? (
-            <SessionDetail 
-              sessionId={activeSessionId} 
-              session={activeSession} 
-              messages={activeSession.messages} 
+            <SessionDetail
+              sessionId={activeSessionId}
+              session={activeSession}
+              messages={activeSession.messages}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-[var(--text-3)]">
@@ -306,10 +389,8 @@ export default function ChatPage() {
               Send
             </button>
           </div>
-          
-          {/* Command suggestions */}
           <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
-            {['/model', '/clear', 'Check status', 'List tasks'].map(cmd => (
+            {['Check status', 'List tasks', 'What time is it', 'Help'].map(cmd => (
               <button
                 key={cmd}
                 onClick={() => setInput(cmd)}
