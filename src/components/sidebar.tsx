@@ -86,6 +86,8 @@ export function Sidebar() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  const isChat = pathname === "/chat";
+
   const Logo = () => (
     <div className="flex items-center gap-2.5">
       <div className="w-8 h-8 rounded-[10px] bg-white flex items-center justify-center">
@@ -106,7 +108,7 @@ export function Sidebar() {
 
   return (
     <>
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-[var(--bg)]/90 backdrop-blur-xl border-b border-[var(--line)] px-4 py-3 flex items-center justify-between">
+      <div className={`md:hidden fixed top-0 left-0 right-0 z-50 bg-[var(--bg)]/90 backdrop-blur-xl border-b border-[var(--line)] px-4 py-3 flex items-center justify-between ${isChat ? 'hidden' : ''}`}>
         <Logo />
         <button
           onClick={() => setIsOpen(!isOpen)}

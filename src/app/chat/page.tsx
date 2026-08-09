@@ -433,9 +433,6 @@ export default function ChatPage() {
 
       {/* ── Top Header ─────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--line)] shrink-0 bg-[var(--bg)] z-30">
-        <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg hover:bg-[var(--surface-2)] text-[var(--text-3)]">
-          {sidebarOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
-        </button>
         <div className="w-8 h-8 rounded-full avatar-gradient-1 flex items-center justify-center text-[11px] font-bold text-black">H</div>
         <div className="flex-1 min-w-0">
           <h2 className="text-[13px] font-semibold text-[var(--text)] truncate">
@@ -464,47 +461,6 @@ export default function ChatPage() {
 
       {/* ── Main area: sidebar overlay + chat ────────────────── */}
       <div className="flex-1 relative flex overflow-hidden">
-
-        {/* Sidebar overlay (mobile) */}
-        {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />}
-
-        {/* Sidebar */}
-        <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} fixed md:relative inset-y-0 left-0 z-40 w-72 md:w-64 border-r border-[var(--line)] bg-[var(--bg)] flex flex-col transition-transform duration-200 shrink-0`}>
-          <div className="p-3 border-b border-[var(--line)] space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[var(--accent)] to-[#00c8ff] flex items-center justify-center text-black font-bold text-sm">H</div>
-                <div>
-                  <h1 className="text-[13px] font-bold text-[var(--text)]">GlyteOS</h1>
-                  <p className="text-[9px] text-[var(--text-4)]">Hermes Mission Control</p>
-                </div>
-              </div>
-              <button onClick={() => setSidebarOpen(false)} className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--text-3)] md:hidden"><X className="w-4 h-4" /></button>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-4)]" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
-                className="w-full pl-8 pr-3 py-2 rounded-lg bg-[var(--surface-1)] border border-[var(--line)] text-[12px] text-[var(--text)] placeholder-[var(--text-3)] focus:outline-none focus:border-[var(--accent)]" />
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto overscroll-contain">
-            {pinned.length > 0 && renderGroup('Pinned', pinned)}
-            {renderGroup('Today', grp.today)}
-            {renderGroup('Yesterday', grp.yesterday)}
-            {renderGroup('This Week', grp.week)}
-            {renderGroup('This Month', grp.month)}
-            {renderGroup('Older', grp.older)}
-            {filtered.length === 0 && (
-              <div className="p-6 text-center"><MessageSquare className="w-8 h-8 text-[var(--text-4)] mx-auto mb-2" /><p className="text-[11px] text-[var(--text-4)]">No conversations</p></div>
-            )}
-          </div>
-          <div className="p-2 border-t border-[var(--line)] flex items-center justify-between">
-            <button onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')} className="text-[10px] text-[var(--text-4)] hover:text-[var(--text-3)] px-2 py-1 rounded hover:bg-[var(--surface-2)]">
-              {sortOrder === 'desc' ? 'Oldest first' : 'Newest first'}
-            </button>
-            <span className="text-[9px] text-[var(--text-4)]">{sessions.length} chats</span>
-          </div>
-        </div>
 
         {/* ── Chat Content ────────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0">
