@@ -469,7 +469,7 @@ export default function ChatPage() {
         {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />}
 
         {/* Sidebar */}
-        <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed md:relative inset-y-0 left-0 z-40 w-72 md:w-64 border-r border-[var(--line)] bg-[var(--bg)] flex flex-col transition-transform duration-200 shrink-0`}>
+        <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} fixed md:relative inset-y-0 left-0 z-40 w-72 md:w-64 border-r border-[var(--line)] bg-[var(--bg)] flex flex-col transition-transform duration-200 shrink-0`}>
           <div className="p-3 border-b border-[var(--line)] space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
