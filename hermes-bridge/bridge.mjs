@@ -460,10 +460,11 @@ async function mirrorTick() {
 async function main() {
   log(`hermes-bridge up · board=${BOARD} · poll=${POLL_MS}ms · mirror=${MIRROR_MS}ms`);
   await emit("status", "Bridge connected", { level: "up" });
-  await mirrorTick();
-  setInterval(() => mirrorTick().catch((e) => log("mirror loop", e.message)), MIRROR_MS);
-  // queue loop
+  // Start queue loop immediately — don't await startup mirror
   const tick = async () => { try { await processQueue(); } catch (e) { log("queue loop", e.message); } finally { setTimeout(tick, POLL_MS); } };
   tick();
+  // Background mirror passes
+  mirrorTick().catch((e) => log("mirrorTick", e.message));
+  setInterval(() => mirrorTick().catch((e) => log("mirror loop", e.message)), MIRROR_MS);
 }
 main().catch((e) => { console.error("fatal", e); process.exit(1); });
