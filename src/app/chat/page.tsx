@@ -258,18 +258,33 @@ export default function ChatPage() {
       try {
         const d = JSON.parse(e.data)
         if (d.status === 'done' && d.result) {
-          setSending(false); setReqStatus('done'); setReplyingTo(null); loadSessions()
-          fetch('/api/hermes/sessions?limit=1').then(r => r.json()).then(sd => {
-            const latest = sd.sessions?.[0]
-            if (latest) {
-              setActiveId(latest.id)
-              fetch(`/api/hermes/sessions/${latest.id}`).then(r => r.json()).then(md => {
-                setMessages(md.messages || []); setAutoScroll(true)
-              })
-            }
-          })
+          setSending(false)
+          setReqStatus('done')
+          setReplyingTo(null)
+          // Append assistant message directly — don't depend on session mirror
+          setMessages(prev => [...prev, {
+            id: Date.now(),
+            session_id: activeId || reqId,
+            role: 'assistant',
+            content: d.result,
+            tool_name: null,
+            tool_calls: null,
+            timestamp: Math.floor(Date.now() / 1000)
+          }])
+          setAutoScroll(true)
         } else if (d.status === 'failed') {
-          setSending(false); setReqStatus('failed'); setReplyingTo(null)
+          setSending(false)
+          setReqStatus('failed')
+          setReplyingTo(null)
+          setMessages(prev => [...prev, {
+            id: Date.now(),
+            session_id: activeId || reqId,
+            role: 'assistant',
+            content: 'Error: ' + (d.error || 'Request failed'),
+            tool_name: null,
+            tool_calls: null,
+            timestamp: Math.floor(Date.now() / 1000)
+          }])
         }
       } catch {}
     })
@@ -280,6 +295,13 @@ export default function ChatPage() {
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || sending) return
+    // Optimistically show user message immediately
+    const userMsg = {
+      id: Date.now(), session_id: 'pending', role: 'user',
+      content: text, tool_name: null, tool_calls: null,
+      timestamp: Math.floor(Date.now() / 1000)
+    }
+    setMessages(prev => [...prev, userMsg])
     setInput(''); setShowCommands(false); setSending(true); setReqStatus('queued'); setAutoScroll(true)
 
     if (text.startsWith('/')) {

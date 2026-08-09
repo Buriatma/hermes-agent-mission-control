@@ -22,6 +22,34 @@ export async function GET(
     if (!request) {
       return NextResponse.json({ error: "Request not found" }, { status: 404 });
     }
+    // If this request is already terminal and we've never returned a result,
+    // send the full stored result immediately (post-Vercel cold-start reconnect).
+    if (request.status === "done" || request.status === "completed") {
+      const encoder0 = new TextEncoder();
+      const stream0 = new ReadableStream({
+        async start(controller) {
+          const send = (event: string, data: unknown) => {
+            try {
+              const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+              controller.enqueue(encoder0.encode(payload));
+            } catch {}
+          };
+          const reqId0 = request.id;
+          // Fetch the result; also try to look up the Hermes session id if stored.
+          send("result", { status: "done", result: request.result || "", requestId: reqId0, sessionId: (request as any).sessionId || null });
+          send("done", { status: "done" });
+          controller.close();
+        },
+      });
+      return new NextResponse(stream0, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache, no-transform",
+          "Connection": "keep-alive",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
