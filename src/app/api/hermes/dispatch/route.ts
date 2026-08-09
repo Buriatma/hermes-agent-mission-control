@@ -15,6 +15,7 @@ export async function POST(req: Request) {
       title: title.slice(0, 200),
       prompt: (b.prompt ?? b.title ?? "").toString() || null,
       sideEffecting,
+      model: b.model ? b.model.toString().slice(0, 200) : null,
       status: sideEffecting ? "awaiting_approval" : "queued",
     },
   });

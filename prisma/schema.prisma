@@ -617,6 +617,7 @@ model AgentRequest {
   status        String    @default("queued")  // queued | awaiting_approval | approved | running | done | failed | rejected
   result        String?
   error         String?
+  model         String?       @default("auto")
   hermesTaskId  String?
   decidedAt     DateTime?
   startedAt     DateTime?

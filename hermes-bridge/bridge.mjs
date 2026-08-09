@@ -259,7 +259,9 @@ async function runRequest(r) {
   try {
     let result = "";
     if (r.kind === "oneshot" || r.kind === "chat") {
-      result = (await hermes(["-z", r.prompt || r.title], { timeout: RUN_TIMEOUT_MS })).trim();
+      const args = ["-z", r.prompt || r.title];
+      if (r.model) args.push("--model", r.model);
+      result = (await hermes(args, { timeout: RUN_TIMEOUT_MS })).trim();
     } else if (r.kind === "kanban") {
       result = (await hermes(["kanban", "--board", BOARD, "create", "--json", r.title], { timeout: 20000 })).trim();
     } else if (r.kind.startsWith("cron.")) {
