@@ -136,14 +136,13 @@ export async function GET(
           }
         }
 
-        // Timeout — send current status, client will reconnect
+        // Timeout — keep connection open for auto-reconnect, don't send 'done'
         send("status", {
           status: lastStatus,
           error: lastError,
           timeout: true,
         });
-        send("done", { status: "timeout" });
-        controller.close();
+        // Don't close — let EventSource auto-reconnect to poll again
       },
     });
 
