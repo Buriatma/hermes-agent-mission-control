@@ -14,8 +14,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    await prisma.hermesMessage.deleteMany({ where: { session_id: id } });
-    await prisma.hermesSession.delete({ where: { id } });
+    // Delete messages if session exists in Neon
+    await prisma.hermesMessage.deleteMany({ where: { session_id: id } }).catch(() => {});
+    await prisma.hermesSession.delete({ where: { id } }).catch(() => {});
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message || "delete failed" }, { status: 500 });
