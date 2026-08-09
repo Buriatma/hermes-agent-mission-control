@@ -253,15 +253,61 @@ async function maybeDailyBrief() {
 }
 
 /* ─────────────── PUSH: run website requests via Hermes ─────────────── */
+/* ─────────────── Slash command → real CLI mapping ─────────────── */
+const SLASH_TO_CLI = {
+  '/status': null, // handled as prompt (LLM status)
+  '/usage': ['usage'],
+  '/insights': ['insights'],
+  '/cost': ['usage'],
+  '/whoami': ['whoami'],
+  '/profile': ['--version'], // fallback, profile info
+  '/version': ['--version'],
+  '/kanban': ['kanban'],
+  '/cron': ['cron', 'list'],
+  '/skills': ['skills', 'list'],
+  '/memory': ['memory', 'list'],
+  '/curator': ['curator', 'status'],
+  '/suggestions': ['suggestions', 'list'],
+  '/bundles': ['skills', 'bundles'],
+  '/agents': ['agents'],
+  '/tasks': ['tasks'],
+};
+
+function parseSlashArgs(prompt) {
+  const m = /^\/(\S+)(?:\s+(.*))?$/.exec((prompt || "").trim());
+  return m ? { cmd: "/" + m[1].toLowerCase(), args: (m[2] || "").trim() } : null;
+}
+
 async function runRequest(r) {
-  await q(`UPDATE \"AgentRequest\" SET status='running', \"startedAt\"=now(), \"updatedAt\"=now() WHERE id=$1`, [r.id]);
+  await q(`UPDATE \\"AgentRequest\\" SET status='running', \\"startedAt\\"=now(), \\"updatedAt\\"=now() WHERE id=$1`, [r.id]);
   await emit("run", `Started: ${r.title}`, { level: "info", meta: { requestId: r.id, kind: r.kind } });
   try {
     let result = "";
     if (r.kind === "oneshot" || r.kind === "chat") {
-      const args = ["-z", r.prompt || r.title];
-      if (r.model) args.push("--model", r.model);
-      result = (await hermes(args, { timeout: RUN_TIMEOUT_MS })).trim();
+      const prompt = r.prompt || r.title || "";
+      // Slash command? Try real CLI mapping first.
+      const parsed = parseSlashArgs(prompt);
+      if (parsed && SLASH_TO_CLI[parsed.cmd]) {
+        const base = SLASH_TO_CLI[parsed.cmd];
+        let argv = [...base];
+        if (parsed.args) argv.push(parsed.args);
+        // kanban/cron need subcommand args; keep raw for them
+        if (parsed.cmd === '/kanban' && parsed.args) argv = ['kanban', ...parsed.args.split(/\s+/)];
+        if (parsed.cmd === '/cron' && parsed.args) argv = ['cron', ...parsed.args.split(/\s+/)];
+        try {
+          result = (await hermes(argv, { timeout: RUN_TIMEOUT_MS })).trim() || `(no output from ${parsed.cmd})`;
+        } catch (e) {
+          result = `[${parsed.cmd} via CLI failed: ${(e.stderr || e.message || "error").toString().split("\\n")[0].slice(0, 200)}]\n\nFalling back to LLM interpretation...\n\n` + (await hermes(["-z", prompt], { timeout: RUN_TIMEOUT_MS })).trim();
+        }
+      } else if (parsed && parsed.cmd === '/model' && parsed.args) {
+        // /model provider:name → forward as --model flag on the prompt itself
+        const m = parsed.args.split(/\s+/)[0];
+        result = (await hermes(["-z", "Reply with one line confirming the active model.", "--model", m], { timeout: RUN_TIMEOUT_MS })).trim();
+      } else {
+        const args = ["-z", prompt];
+        if (r.model) args.push("--model", r.model);
+        result = (await hermes(args, { timeout: RUN_TIMEOUT_MS })).trim();
+      }
     } else if (r.kind === "kanban") {
       result = (await hermes(["kanban", "--board", BOARD, "create", "--json", r.title], { timeout: 20000 })).trim();
     } else if (r.kind.startsWith("cron.")) {
