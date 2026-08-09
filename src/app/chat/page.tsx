@@ -113,6 +113,7 @@ export default function ChatPage() {
   const [msgSearchOpen, setMsgSearchOpen] = useState(false)
   const [msgSearch, setMsgSearch] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [loadKey, setLoadKey] = useState(0)
 
   const sounds = useChatSounds(soundEnabled)
@@ -434,34 +435,59 @@ export default function ChatPage() {
     )
   }
 
+  const models = ['auto', 'gemini-flash', 'gemini-2.5-flash', 'claude-3.5-sonnet', 'gpt-4o', 'best-long-context', 'best-coding']
+
   return (
     <div className="h-full flex flex-col bg-[var(--bg)] overflow-hidden">
 
       {/* ── Top Header ─────────────────────────────────────── */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--line)] shrink-0 bg-[var(--bg)] z-30">
-        <div className="w-8 h-8 rounded-full avatar-gradient-1 flex items-center justify-center text-[11px] font-bold text-black">H</div>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-[13px] font-semibold text-[var(--text)] truncate">
-            {activeId ? (sessions.find(s => s.id === activeId)?.title || 'Chat') : 'New conversation'}
-          </h2>
-          <div className="flex items-center gap-1.5">
-            {reqStatus === 'done' && <span className="text-[9px] text-green-400 flex items-center gap-0.5"><CheckCheck className="w-3 h-3" /> ready</span>}
-            {reqStatus === 'running' && <span className="text-[9px] text-[var(--accent)] flex items-center gap-0.5"><Loader2 className="w-3 h-3 animate-spin" /> typing</span>}
-            {reqStatus === 'queued' && <span className="text-[9px] text-[var(--text-4)]">queued</span>}
-            {reqStatus === 'failed' && <span className="text-[9px] text-[var(--down)] flex items-center gap-0.5"><AlertCircle className="w-3 h-3" /> error</span>}
-            {!reqStatus && <span className="text-[9px] text-[var(--text-4)]">{messages.length} messages</span>}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--line)] shrink-0 bg-[var(--bg)] z-30 h-14">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <button onClick={() => window.history.back()} className="p-2 -ml-2 text-[var(--text-4)] md:hidden">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="w-8 h-8 rounded-full avatar-gradient-1 flex items-center justify-center text-[10px] font-bold text-black shrink-0">H</div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-[13px] font-semibold text-[var(--text)] truncate leading-tight">
+              {activeId ? (sessions.find(s => s.id === activeId)?.title || 'Chat') : 'New Chat'}
+            </h2>
+            <div className="flex items-center gap-1.5">
+              {reqStatus === 'done' && <span className="text-[8px] text-green-400 flex items-center gap-0.5">● ready</span>}
+              {reqStatus === 'running' && <span className="text-[8px] text-[var(--accent)] flex items-center gap-0.5">● typing</span>}
+              {!reqStatus && <span className="text-[8px] text-[var(--text-4)] uppercase tracking-wider">{messages.length} messages</span>}
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        
+        <div className="flex items-center gap-1.5">
+          <div className="relative">
+            <button onClick={() => setMenuOpen(!menuOpen)} className="flex items-center gap-1 px-2 py-1 rounded bg-[var(--surface-1)] border border-[var(--line)] text-[10px] text-[var(--text-2)] hover:border-[var(--accent)] transition-colors max-w-[80px] truncate">
+              {model} <ChevronDown className="w-3 h-3 opacity-50" />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                <div className="absolute top-full right-0 mt-1 w-48 bg-[var(--surface-1)] border border-[var(--line)] rounded-lg shadow-xl py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-100">
+                  {models.map(m => (
+                    <button key={m} onClick={() => { setModel(m); setMenuOpen(false) }}
+                      className={`w-full text-left px-3 py-2 text-[11px] hover:bg-[var(--accent)]/10 flex items-center justify-between ${model === m ? 'text-[var(--accent)]' : 'text-[var(--text-3)]'}`}>
+                      {m} {model === m && <Check className="w-3 h-3" />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          
+          <button onClick={() => window.location.reload()} className="p-2 rounded-lg hover:bg-[var(--surface-2)] text-[var(--text-3)]">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+          
           {activeId && (
             <>
               <button onClick={exportChat} className="p-2 rounded-lg hover:bg-[var(--surface-2)] text-[var(--text-3)] hidden md:block" title="Export"><Download className="w-4 h-4" /></button>
-              <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-2 rounded-lg hover:bg-[var(--surface-2)] text-[var(--text-3)] hidden md:block" title="Sound">
-                {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-              </button>
             </>
           )}
-          <ModelSelector current={model} onChange={setModel} />
         </div>
       </div>
 
