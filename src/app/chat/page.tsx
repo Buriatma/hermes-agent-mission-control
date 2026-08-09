@@ -207,6 +207,7 @@ export default function ChatPage() {
   const endRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const sseRef = useRef<EventSource | null>(null)
+  const pollRef = useRef<any>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
@@ -255,53 +256,68 @@ export default function ChatPage() {
   // Request notification permission on mount
   useEffect(() => { requestPermission().catch(() => {}) }, [requestPermission])
 
-  const connectSSE = useCallback((requestId: string) => {
-    if (sseRef.current) { sseRef.current.close(); sseRef.current = null }
-    const es = new EventSource(`/api/hermes/requests/${requestId}/stream`)
-    sseRef.current = es
-
-    es.addEventListener('status', (e) => {
-      try { const d = JSON.parse(e.data); setReqStatus(d.status || '') } catch {}
-    })
-    es.addEventListener('result', (e) => {
+  const pollRequest = useCallback((requestId: string) => {
+    // Close any prior SSE
+    if (sseRef.current) { try { sseRef.current.close() } catch {}; sseRef.current = null }
+    // Poll every 2s until terminal
+    let attempts = 0
+    const timer = setInterval(async () => {
+      attempts++
       try {
-        const d = JSON.parse(e.data)
-        if (d.status === 'done' && d.result) {
+        const res = await fetch(`/api/hermes/requests/${requestId}`)
+        const d = await res.json()
+        const r = d.request
+        if (r?.status) setReqStatus(r.status)
+        else setReqStatus('')
+        if (r?.status === 'done' || r?.status === 'completed') {
+          clearInterval(timer)
           setSending(false)
           setReqStatus('done')
           setReplyingTo(null)
-          // Notify
-          notify('Hermes response ready', d.result.slice(0, 100), 'hermes-response')
-          // Append assistant message directly — don't depend on session mirror
-          setMessages(prev => [...prev, {
-            id: Date.now(),
-            session_id: activeId || reqId,
-            role: 'assistant',
-            content: d.result,
-            tool_name: null,
-            tool_calls: null,
-            timestamp: Math.floor(Date.now() / 1000)
-          }])
-          setAutoScroll(true)
-        } else if (d.status === 'failed') {
+          const result = r.result || ''
+          if (result) {
+            notify('Hermes response ready', result.slice(0, 100), 'hermes-response')
+            // Merge — avoid duplicate when session reload already has it
+            setMessages(prev => {
+              const exists = prev.some(m => m.role === 'assistant' && m.content === result && m.session_id === (activeId || requestId))
+              if (exists) return prev
+              return [...prev, {
+                id: Date.now(),
+                session_id: activeId || requestId,
+                role: 'assistant',
+                content: result,
+                tool_name: null,
+                tool_calls: null,
+                timestamp: Math.floor(Date.now() / 1000)
+              }]
+            })
+            setAutoScroll(true)
+          }
+          return
+        }
+        if (r?.status === 'failed') {
+          clearInterval(timer)
           setSending(false)
           setReqStatus('failed')
           setReplyingTo(null)
           setMessages(prev => [...prev, {
             id: Date.now(),
-            session_id: activeId || reqId,
+            session_id: activeId || requestId,
             role: 'assistant',
-            content: 'Error: ' + (d.error || 'Request failed'),
+            content: 'Error: ' + (r.error || 'Request failed'),
             tool_name: null,
             tool_calls: null,
             timestamp: Math.floor(Date.now() / 1000)
           }])
+          return
         }
       } catch {}
-    })
-    es.addEventListener('done', () => { es.close(); sseRef.current = null })
-    es.onerror = () => { if (es.readyState === EventSource.CLOSED) sseRef.current = null }
-  }, [loadSessions])
+      if (attempts > 200) clearInterval(timer) // 10 min cap
+    }, 3000)
+    // Keep handle to clear on unmount/next send
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = timer
+  }, [activeId, notify])
 
   const sendMessage = useCallback(async () => {
     const text = input.trim()
@@ -334,11 +350,11 @@ export default function ChatPage() {
       const d = await res.json()
       const id = d.request?.id
       if (!id) { setSending(false); setReqStatus(''); return }
-      setReqId(id); loadSessions(); connectSSE(id)
+      setReqId(id); loadSessions(); pollRequest(id)
     } catch (e) {
       console.error(e); setSending(false); setReqStatus('')
     }
-  }, [input, sending, loadSessions, connectSSE, model, replyingTo])
+  }, [input, sending, loadSessions, pollRequest, model, replyingTo])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
