@@ -15,7 +15,7 @@ import {
   Database, Lightbulb, Boxes, Sparkles, Layers, PlugZap,
   BarChart3, TrendingUp, Wallet, User, UserCircle, Tag,
   ShieldCheck, ShieldX, RotateCw, Square, Minimize2, GitBranch, Cpu,
-  Flame, Info, Columns3
+  Flame, Info, Columns3, BookOpen
 } from 'lucide-react'
 
 // ─── web audio sounds ──────────────────────────────────────────
