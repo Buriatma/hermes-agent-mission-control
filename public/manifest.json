@@ -1,21 +1,27 @@
 {
   "name": "GlyteOS Mission Control",
   "short_name": "GlyteOS",
-  "description": "Command center for Hermes Agent & GlyteTech operations.",
+  "description": "Command center for Hermes Agent & GlyteTech operations",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a",
+  "background_color": "#0a0b0d",
+  "theme_color": "#0a0b0d",
+  "orientation": "any",
+  "categories": ["productivity", "developer"],
+  "scope": "/",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "https://ik.imagekit.io/ecuuhbi4w/Glyte-GPT%20logo.png?updatedAt=1755967856964",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "https://ik.imagekit.io/ecuuhbi4w/Glyte-GPT%20logo.png?updatedAt=1755967856964",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

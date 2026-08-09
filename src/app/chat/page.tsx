@@ -90,17 +90,15 @@ function RoleBadge({ role }: { role: string }) {
 
 function MessageContent({ content, role }: { content: string; role: string }) {
   if (!content) return null
-  const lines = content.split('\n')
   const isUser = role === 'user'
+  if (isUser) {
+    return <div className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{content}</div>
+  }
   return (
-    <div className={`text-[13px] leading-relaxed whitespace-pre-wrap break-words ${!isUser ? 'prose prose-invert prose-sm max-w-none' : ''}`}>
-      {lines.map((line, i) => {
-        if (line.startsWith('```')) return <pre key={i} className="text-[11px] font-mono bg-black/40 rounded-xl p-3 mt-2 overflow-x-auto border border-white/5"><code>{line.replace(/^```\w*/, '')}</code></pre>
-        if (line.startsWith('> ')) return <blockquote key={i} className="border-l-2 border-[var(--accent)] pl-3 text-[var(--text-3)] italic my-1">{line.slice(2)}</blockquote>
-        if (line.startsWith('- ')) return <div key={i} className="flex gap-2 ml-1 my-0.5"><span className="text-[var(--accent)]">•</span><span>{line.slice(2)}</span></div>
-        if (line.match(/^\d+\.\s/)) return <div key={i} className="flex gap-2 ml-1 my-0.5"><span className="text-[var(--accent)] font-semibold">{line.match(/^(\d+\.\s)/)?.[1]}</span><span>{line.replace(/^\d+\.\s/, '')}</span></div>
-        return <span key={i}>{line}{i < lines.length - 1 ? <br /> : null}</span>
-      })}
+    <div className="text-[13px] leading-relaxed break-words prose prose-invert prose-sm max-w-none [&_pre]:text-[11px] [&_pre]:font-mono [&_pre]:bg-black/40 [&_pre]:rounded-xl [&_pre]:p-3 [&_pre]:overflow-x-auto [&_pre]:border [&_pre]:border-white/5 [&_pre]:mt-2 [&_pre]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--accent)] [&_blockquote]:pl-3 [&_blockquote]:text-[var(--text-3)] [&_blockquote]:italic [&_a]:text-[var(--accent)] [&_a]:underline [&_h1]:text-base [&_h2]:text-[15px] [&_h3]:text-sm [&_h1],&_h2,&_h3]:font-semibold [&_h1],&_h2,&_h3]:mt-2 [&_h1],&_h2,&_h3]:mb-1 [&_code]:text-[var(--accent)] [&_code]:bg-[var(--surface-1)] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[var(--text-2)] [&_table]:w-full [&_th]:text-left [&_th]:border [&_th]:border-[var(--line)] [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-[var(--line)] [&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px]>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+        {content}
+      </ReactMarkdown>
     </div>
   )
 }
@@ -182,7 +180,15 @@ function ModelSelector({ current, onChange }: { current: string | null; onChange
   )
 }
 
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import rehypeHighlight from "rehype-highlight"
+import { VoiceInput } from "@/components/voice-input"
+import { InstallBanner } from "@/components/pwa"
+import { useNotifications } from "@/components/notifications"
+
 export default function ChatPage() {
+  const { requestPermission, notify } = useNotifications()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [activeId, setActiveId] = useState<string>('')
   const [messages, setMessages] = useState<Message[]>([])
@@ -246,6 +252,9 @@ export default function ChatPage() {
     return () => { if (sseRef.current) { sseRef.current.close(); sseRef.current = null } }
   }, [])
 
+  // Request notification permission on mount
+  useEffect(() => { requestPermission().catch(() => {}) }, [requestPermission])
+
   const connectSSE = useCallback((requestId: string) => {
     if (sseRef.current) { sseRef.current.close(); sseRef.current = null }
     const es = new EventSource(`/api/hermes/requests/${requestId}/stream`)
@@ -261,6 +270,8 @@ export default function ChatPage() {
           setSending(false)
           setReqStatus('done')
           setReplyingTo(null)
+          // Notify
+          notify('Hermes response ready', d.result.slice(0, 100), 'hermes-response')
           // Append assistant message directly — don't depend on session mirror
           setMessages(prev => [...prev, {
             id: Date.now(),
@@ -419,6 +430,7 @@ export default function ChatPage() {
 
       {/* Main chat area */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <InstallBanner />
         {/* Header */}
         <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 border-b border-[var(--line)] shrink-0 bg-[var(--bg)]/80 backdrop-blur-xl z-10">
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-[var(--text-3)] hover:text-[var(--text)] p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-all md:hidden">
@@ -517,7 +529,11 @@ export default function ChatPage() {
                         ))}
                       </div>
                       <div className={`flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? 'justify-end' : 'justify-start'} ml-1`}>
-                        <button onClick={() => { setInput(group.map(g => g.content || '').join('\n')); inputRef.current?.focus() }}
+                        <button onClick={() => {
+                            const text = group.map(g => g.content || '').join('\n')
+                            if (isUser) { setInput(text); inputRef.current?.focus() }
+                            else { navigator.clipboard.writeText(text).catch(() => {}) }
+                          }}
                           className="text-[10px] px-2 py-0.5 rounded-md hover:bg-[var(--surface-2)] text-[var(--text-3)] hover:text-[var(--text)] transition-all">
                           {isUser ? 'Edit' : 'Copy'}
                         </button>
@@ -574,6 +590,7 @@ export default function ChatPage() {
                   /
                 </button>
               </div>
+              <VoiceInput onSend={(text) => { setInput(text); setTimeout(() => sendMessage(), 50) }} disabled={sending} />
               <button onClick={sendMessage} disabled={!input.trim() || sending}
                 className="px-5 py-3 rounded-2xl text-[13px] font-semibold text-black bg-gradient-to-r from-[var(--accent)] to-[#00c8ff] hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-lg shadow-[var(--accent)]/20">
                 {sending ? (
