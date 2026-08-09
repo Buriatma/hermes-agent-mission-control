@@ -429,7 +429,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="chat-outer flex flex-col bg-[var(--bg)] overflow-hidden md:rounded-2xl md:border md:border-[var(--line)]/50 md:shadow-2xl md:shadow-black/20">
+    <div className="h-full flex flex-col bg-[var(--bg)] overflow-hidden">
 
       {/* ── Top Header ─────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--line)] shrink-0 bg-[var(--bg)] z-30">
