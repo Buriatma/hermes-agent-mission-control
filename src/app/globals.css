@@ -503,6 +503,18 @@ html.light {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* ── Chat page mobile viewport ──────────────────────────── */
+.chat-outer {
+  height: 100dvh;
+}
+
+@media (min-width: 768px) {
+  .chat-outer {
+    height: calc(100vh - 2rem);
+    margin: 1rem;
+  }
+}
+
 /* ── Typing indicator glow ──────────────────────────────── */
 .typing-dot {
   width: 6px;
