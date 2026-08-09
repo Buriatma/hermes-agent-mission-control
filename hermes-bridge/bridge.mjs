@@ -279,7 +279,7 @@ function parseSlashArgs(prompt) {
 }
 
 async function runRequest(r) {
-  await q(`UPDATE \\"AgentRequest\\" SET status='running', \\"startedAt\\"=now(), \\"updatedAt\\"=now() WHERE id=$1`, [r.id]);
+  await q(`UPDATE "AgentRequest" SET status='running', "startedAt"=now(), "updatedAt"=now() WHERE id=$1`, [r.id]);
   await emit("run", `Started: ${r.title}`, { level: "info", meta: { requestId: r.id, kind: r.kind } });
   try {
     let result = "";
