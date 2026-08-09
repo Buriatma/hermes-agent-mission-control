@@ -255,22 +255,16 @@ async function maybeDailyBrief() {
 /* ─────────────── PUSH: run website requests via Hermes ─────────────── */
 /* ─────────────── Slash command → real CLI mapping ─────────────── */
 const SLASH_TO_CLI = {
-  '/status': null, // handled as prompt (LLM status)
-  '/usage': ['usage'],
+  '/version': ['version'],
   '/insights': ['insights'],
-  '/cost': ['usage'],
-  '/whoami': ['whoami'],
-  '/profile': ['--version'], // fallback, profile info
-  '/version': ['--version'],
-  '/kanban': ['kanban'],
-  '/cron': ['cron', 'list'],
-  '/skills': ['skills', 'list'],
   '/memory': ['memory', 'list'],
+  '/skills': ['skills', 'list'],
   '/curator': ['curator', 'status'],
-  '/suggestions': ['suggestions', 'list'],
+  '/cron': ['cron', 'list'],
+  '/kanban': ['kanban'],
+  '/moa': ['moa'],
   '/bundles': ['skills', 'bundles'],
-  '/agents': ['agents'],
-  '/tasks': ['tasks'],
+  '/profile': ['profile'],
 };
 
 function parseSlashArgs(prompt) {
