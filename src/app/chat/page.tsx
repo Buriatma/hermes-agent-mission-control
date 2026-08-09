@@ -1,5 +1,14 @@
 "use client"
 import { useState, useEffect, useCallback, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
+import {
+  MessageSquare, Plus, Search, Trash2, Edit3, Copy, MoreVertical,
+  ChevronDown, Send, Paperclip, Mic, Check, CheckCheck,
+  AlertCircle, Loader2, X, Settings, HelpCircle, Terminal,
+  Zap, Clock, ArrowLeft, Star, Archive, Pin, Volume2
+} from 'lucide-react'
 
 interface SessionSummary {
   id: string; source: string; model: string | null; title: string | null
@@ -24,24 +33,22 @@ const SOURCE_COLORS: Record<string, string> = {
 }
 
 const COMMANDS = [
-  { name: '/help', desc: 'Show available commands' },
-  { name: '/status', desc: 'Check Hermes health' },
-  { name: '/new', desc: 'Start new session' },
-  { name: '/search', desc: 'Search sessions' },
-  { name: '/cost', desc: 'Show cost breakdown' },
-  { name: '/sessions', desc: 'List recent sessions' },
-  { name: '/cron', desc: 'List cron jobs' },
-  { name: '/brief', desc: 'Trigger daily briefing' },
-  { name: '/clear', desc: 'Clear current chat' },
-  { name: '/model', desc: 'Switch model' },
+  { name: '/help', desc: 'Show commands', icon: HelpCircle },
+  { name: '/new', desc: 'New conversation', icon: Plus },
+  { name: '/clear', desc: 'Clear chat', icon: Trash2 },
+  { name: '/model', desc: 'Switch model', icon: Terminal },
+  { name: '/status', desc: 'System status', icon: Zap },
+  { name: '/search', desc: 'Search history', icon: Search },
+  { name: '/brief', desc: 'Daily briefing', icon: Clock },
+  { name: '/cost', desc: 'Usage & cost', icon: Archive },
 ]
 
 function timeAgo(ts: number) {
   const diff = Date.now() / 1000 - ts
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
+  if (diff < 60) return 'now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
+  return `${Math.floor(diff / 86400)}d`
 }
 
 function formatTime(ts: number) {
@@ -53,12 +60,6 @@ function formatTime(ts: number) {
   const month = d.toLocaleString([], { month: 'short' })
   const day = d.getDate()
   return `${time} · ${month} ${day}`
-}
-
-function formatTokens(n: number) {
-  if (n > 1000000) return `${(n / 1000000).toFixed(1)}M`
-  if (n > 1000) return `${(n / 1000).toFixed(1)}k`
-  return n.toString()
 }
 
 function getAvatarClass(source: string) {
@@ -75,39 +76,12 @@ function getInitial(text: string) {
 }
 
 function SourceBadge({ source }: { source: string }) {
-  return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: `${SOURCE_COLORS[source] || '#94a3b8'}20`, color: SOURCE_COLORS[source] || '#94a3b8' }}>{source}</span>
-}
-
-function RoleBadge({ role }: { role: string }) {
-  const colors: Record<string, string> = {
-    user: 'bg-[#3b82f6]/15 text-[#60a5fa]',
-    assistant: 'bg-[var(--accent)]/15 text-[var(--accent)]',
-    tool: 'bg-[#f59e0b]/15 text-[#fbbf24]',
-    system: 'bg-[#8b5cf6]/15 text-[#a78bfa]',
-  }
-  return <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold tracking-wider uppercase ${colors[role] || 'bg-white/10 text-white/50'}`}>{role}</span>
-}
-
-function MessageContent({ content, role }: { content: string; role: string }) {
-  if (!content) return null
-  const isUser = role === 'user'
-  if (isUser) {
-    return <div className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{content}</div>
-  }
-  return (
-    <div className="text-[13px] leading-relaxed break-words prose prose-invert prose-sm max-w-none markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-        {content}
-      </ReactMarkdown>
-    </div>
-  )
+  return <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: `${SOURCE_COLORS[source] || '#94a3b8'}20`, color: SOURCE_COLORS[source] || '#94a3b8' }}>{source}</span>
 }
 
 function TypingIndicator({ status }: { status: ReqStatus }) {
   const labels: Record<string, string> = {
-    queued: 'Queued - waiting...',
-    running: 'Working...',
-    '': 'Thinking...',
+    queued: 'Queued - waiting...', running: 'Working...', '': 'Thinking...',
   }
   return (
     <div className="flex justify-start msg-in">
@@ -124,24 +98,42 @@ function TypingIndicator({ status }: { status: ReqStatus }) {
   )
 }
 
+function MessageContent({ content, role }: { content: string; role: string }) {
+  if (!content) return null
+  const isUser = role === 'user'
+  if (isUser) {
+    return <div className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{content}</div>
+  }
+  return (
+    <div className="text-[13px] leading-relaxed break-words markdown-body">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
 function CommandPalette({ onSelect, onClose }: { onSelect: (cmd: string) => void; onClose: () => void }) {
   const [query, setQuery] = useState('')
   const filtered = COMMANDS.filter(c => c.name.startsWith(query.toLowerCase()) || c.desc.toLowerCase().includes(query.toLowerCase()))
   return (
     <div className="absolute bottom-full left-0 right-0 mb-2 bg-[var(--surface-1)] border border-[var(--line)] rounded-xl shadow-2xl shadow-black/40 overflow-hidden z-50 glass fade-in-up">
       <div className="p-2">
-        <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
-          placeholder="Type a command..."
+        <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Type a command..."
           className="w-full px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--line)] text-sm text-[var(--text)] placeholder-[var(--text-3)] focus:outline-none focus:border-[var(--accent)] transition-colors" />
       </div>
       <div className="max-h-48 overflow-y-auto">
-        {filtered.map(cmd => (
-          <button key={cmd.name} onClick={() => onSelect(cmd.name)}
-            className="w-full text-left px-3 py-2.5 hover:bg-[var(--accent)]/10 flex items-center gap-3 border-b border-[var(--line)] last:border-0 transition-all group">
-            <span className="text-[11px] font-mono text-[var(--accent)] font-semibold min-w-[60px]">{cmd.name}</span>
-            <span className="text-[11px] text-[var(--text-3)] group-hover:text-[var(--text-2)] transition-colors">{cmd.desc}</span>
-          </button>
-        ))}
+        {filtered.map(cmd => {
+          const Icon = cmd.icon
+          return (
+            <button key={cmd.name} onClick={() => onSelect(cmd.name)}
+              className="w-full text-left px-3 py-2.5 hover:bg-[var(--accent)]/10 flex items-center gap-3 border-b border-[var(--line)] last:border-0 transition-all group">
+              <Icon className="w-4 h-4 text-[var(--text-3)] group-hover:text-[var(--accent)]" />
+              <span className="text-[11px] font-mono text-[var(--accent)] font-semibold min-w-[60px]">{cmd.name}</span>
+              <span className="text-[11px] text-[var(--text-3)] group-hover:text-[var(--text-2)] transition-colors">{cmd.desc}</span>
+            </button>
+          )
+        })}
         {filtered.length === 0 && <p className="text-xs text-[var(--text-3)] px-3 py-2">No commands found</p>}
       </div>
     </div>
@@ -157,7 +149,7 @@ function ModelSelector({ current, onChange }: { current: string | null; onChange
         className="text-[11px] px-3 py-1.5 rounded-full bg-[var(--surface-2)] border border-[var(--line)] text-[var(--text-3)] hover:text-[var(--accent)] hover:border-[var(--accent)]/50 transition-all flex items-center gap-1.5">
         <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
         {current || 'auto'}
-        <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+        <ChevronDown className="w-2.5 h-2.5" />
       </button>
       {open && (
         <>
@@ -170,7 +162,7 @@ function ModelSelector({ current, onChange }: { current: string | null; onChange
               <button key={m} onClick={() => { onChange(m); setOpen(false) }}
                 className={`w-full text-left px-3 py-2 flex items-center justify-between transition-all ${m === current ? 'text-[var(--accent)] bg-[var(--accent)]/10' : 'text-[var(--text-3)] hover:bg-[var(--surface-2)]'}`}>
                 <span className="text-[12px] font-mono">{m}</span>
-                {m === current && <span className="text-[var(--accent)] text-[10px]">✓</span>}
+                {m === current && <Check className="w-3 h-3 text-[var(--accent)]" />}
               </button>
             ))}
           </div>
@@ -180,172 +172,151 @@ function ModelSelector({ current, onChange }: { current: string | null; onChange
   )
 }
 
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
-import rehypeHighlight from "rehype-highlight"
-import { VoiceInput } from "@/components/voice-input"
-import { InstallBanner } from "@/components/pwa"
-import { useNotifications } from "@/components/notifications"
-
 export default function ChatPage() {
-  const { requestPermission, notify } = useNotifications()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [activeId, setActiveId] = useState<string>('')
   const [messages, setMessages] = useState<Message[]>([])
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [msgLoading, setMsgLoading] = useState(false)
-  const [sourceFilter, setSourceFilter] = useState('')
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [reqId, setReqId] = useState<string>('')
   const [reqStatus, setReqStatus] = useState<ReqStatus>('')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [reqId, setReqId] = useState('')
+  const [search, setSearch] = useState('')
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [showCommands, setShowCommands] = useState(false)
   const [model, setModel] = useState<string | null>(null)
-  const endRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
-  const sseRef = useRef<EventSource | null>(null)
-  const pollRef = useRef<any>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
+  const [contextMenu, setContextMenu] = useState<{ id: number; x: number; y: number } | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [loadSessionsKey, setLoadSessionsKey] = useState(0)
   const [autoScroll, setAutoScroll] = useState(true)
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
 
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const endRef = useRef<HTMLDivElement>(null)
+  const pollRef = useRef<any>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
   const loadSessions = useCallback(async () => {
     try {
-      const qs = new URLSearchParams()
-      if (sourceFilter) qs.set('source', sourceFilter)
-      qs.set('limit', '200')
-      const res = await fetch(`/api/hermes/sessions?${qs}`)
-      if (res.ok) {
-        const data = await res.json()
-        setSessions(data.sessions || [])
-      }
-    } catch (e) { console.error(e) }
-    setLoading(false)
-  }, [sourceFilter])
+      const res = await fetch(`/api/hermes/sessions?limit=50&_=${Date.now()}`)
+      const d = await res.json()
+      if (d.sessions) setSessions(d.sessions)
+    } catch {}
+  }, [])
 
-  useEffect(() => { loadSessions() }, [loadSessions])
+  const loadSession = useCallback(async (id: string) => {
+    if (!id) return
+    setActiveId(id)
+    try {
+      const res = await fetch(`/api/hermes/sessions/${id}`)
+      const d = await res.json()
+      if (d.messages) setMessages(d.messages)
+      else setMessages([])
+    } catch {
+      setMessages([])
+    }
+  }, [])
 
-  useEffect(() => {
-    if (!activeId) { setMessages([]); return }
-    setMsgLoading(true)
-    fetch(`/api/hermes/sessions/${activeId}`)
-      .then(r => r.json())
-      .then(d => { setMessages(d.messages || []); setMsgLoading(false) })
-      .catch(() => setMsgLoading(false))
-  }, [activeId])
+  useEffect(() => { loadSessions() }, [loadSessions, loadSessionsKey])
 
   useEffect(() => {
-    if (autoScroll) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    const el = endRef.current
+    if (!el || !autoScroll) return
+    el.scrollIntoView({ behavior: 'smooth' })
   }, [messages, sending, autoScroll])
 
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const onScroll = () => setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
-    el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
+  const onScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
   }, [])
-
-  useEffect(() => {
-    return () => { if (sseRef.current) { sseRef.current.close(); sseRef.current = null } }
-  }, [])
-
-  // Request notification permission on mount
-  useEffect(() => { requestPermission().catch(() => {}) }, [requestPermission])
 
   const pollRequest = useCallback((requestId: string) => {
-    // Close any prior SSE
-    if (sseRef.current) { try { sseRef.current.close() } catch {}; sseRef.current = null }
-    // Poll every 2s until terminal
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
     let attempts = 0
     const timer = setInterval(async () => {
       attempts++
       try {
-        const res = await fetch(`/api/hermes/requests/${requestId}`)
+        const res = await fetch(`/api/hermes/requests/${requestId}?_=${Date.now()}`)
         const d = await res.json()
         const r = d.request
         if (r?.status) setReqStatus(r.status)
         else setReqStatus('')
         if (r?.status === 'done' || r?.status === 'completed') {
-          clearInterval(timer)
-          setSending(false)
-          setReqStatus('done')
-          setReplyingTo(null)
+          clearInterval(timer); pollRef.current = null
+          setSending(false); setReqStatus('done'); setReplyingTo(null)
           const result = r.result || ''
           if (result) {
-            notify('Hermes response ready', result.slice(0, 100), 'hermes-response')
-            // Merge — avoid duplicate when session reload already has it
             setMessages(prev => {
               const exists = prev.some(m => m.role === 'assistant' && m.content === result && m.session_id === (activeId || requestId))
               if (exists) return prev
               return [...prev, {
-                id: Date.now(),
-                session_id: activeId || requestId,
-                role: 'assistant',
-                content: result,
-                tool_name: null,
-                tool_calls: null,
-                timestamp: Math.floor(Date.now() / 1000)
+                id: Date.now(), session_id: activeId || requestId, role: 'assistant',
+                content: result, tool_name: null, tool_calls: null, timestamp: Math.floor(Date.now() / 1000)
               }]
             })
-            setAutoScroll(true)
           }
-          return
+          loadSessions()
         }
         if (r?.status === 'failed') {
-          clearInterval(timer)
-          setSending(false)
-          setReqStatus('failed')
-          setReplyingTo(null)
+          clearInterval(timer); pollRef.current = null
+          setSending(false); setReqStatus('failed'); setReplyingTo(null)
           setMessages(prev => [...prev, {
-            id: Date.now(),
-            session_id: activeId || requestId,
-            role: 'assistant',
-            content: 'Error: ' + (r.error || 'Request failed'),
-            tool_name: null,
-            tool_calls: null,
+            id: Date.now(), session_id: activeId || requestId, role: 'assistant',
+            content: 'Error: ' + (r.error || 'Request failed'), tool_name: null, tool_calls: null,
             timestamp: Math.floor(Date.now() / 1000)
           }])
-          return
         }
       } catch {}
-      if (attempts > 200) clearInterval(timer) // 10 min cap
+      if (attempts > 300) clearInterval(timer)
     }, 3000)
-    // Keep handle to clear on unmount/next send
-    if (pollRef.current) clearInterval(pollRef.current)
     pollRef.current = timer
-  }, [activeId, notify])
+  }, [activeId, loadSessions])
+
+  const deleteSession = useCallback(async (id: string) => {
+    try {
+      await fetch(`/api/hermes/sessions/${id}`, { method: 'DELETE' })
+      setSessions(prev => prev.filter(s => s.id !== id))
+      if (activeId === id) { setActiveId(''); setMessages([]) }
+      setDeleteConfirm(null)
+    } catch {}
+  }, [activeId])
+
+  const deleteMessage = useCallback(async (sessionId: string, messageId: number) => {
+    try {
+      await fetch(`/api/hermes/sessions/${sessionId}/messages/${messageId}`, { method: 'DELETE' })
+      setMessages(prev => prev.filter(m => m.id !== messageId))
+      setContextMenu(null)
+    } catch {}
+  }, [])
 
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || sending) return
-    // Optimistically show user message immediately
     const userMsg = {
       id: Date.now(), session_id: 'pending', role: 'user',
-      content: text, tool_name: null, tool_calls: null,
-      timestamp: Math.floor(Date.now() / 1000)
+      content: text, tool_name: null, tool_calls: null, timestamp: Math.floor(Date.now() / 1000)
     }
     setMessages(prev => [...prev, userMsg])
-    setInput(''); setShowCommands(false); setSending(true); setReqStatus('queued'); setAutoScroll(true)
+    setInput(''); setShowCommands(false); setSending(true); setReqStatus('queued')
 
     if (text.startsWith('/')) {
       const cmd = text.split(' ')[0].toLowerCase()
-      if (cmd === '/new') { setActiveId(''); setMessages([]); setSending(false); setReqStatus(''); loadSessions(); return }
+      if (cmd === '/new') { setActiveId(''); setMessages([]); setSending(false); setReqStatus(''); setLoadSessionsKey(k => k + 1); return }
       if (cmd === '/clear') { setMessages([]); setSending(false); setReqStatus(''); return }
       if (cmd === '/model') { setModel(text.split(' ')[1] || 'gemini-flash'); setSending(false); setReqStatus(''); return }
+      if (cmd === '/help') {
+        setMessages(prev => [...prev, {
+          id: Date.now(), session_id: activeId || 'system', role: 'assistant',
+          content: COMMANDS.map(c => `**${c.name}** - ${c.desc}`).join('\n'),
+          tool_name: null, tool_calls: null, timestamp: Math.floor(Date.now() / 1000)
+        }])
+        setSending(false); setReqStatus(''); return
+      }
     }
 
     try {
       const body: any = { prompt: text, title: text.slice(0, 60), kind: 'chat' }
       if (model) body.model = model
-      if (replyingTo) {
-        body.prompt = `[Replying to message ${replyingTo.id}]\n${text}`
-        body.title = `Reply: ${text.slice(0, 50)}`
-        setReplyingTo(null)
-      }
       const res = await fetch('/api/hermes/dispatch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const d = await res.json()
       const id = d.request?.id
@@ -354,22 +325,27 @@ export default function ChatPage() {
     } catch (e) {
       console.error(e); setSending(false); setReqStatus('')
     }
-  }, [input, sending, loadSessions, pollRequest, model, replyingTo])
+  }, [input, sending, loadSessions, pollRequest, model, activeId])
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).catch(() => {})
+  }
+
+  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === '/' && !e.metaKey && !e.ctrlKey && document.activeElement !== inputRef.current) {
-        e.preventDefault(); setShowCommands(true)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault(); setActiveId(''); setMessages([]); inputRef.current?.focus()
       }
-      if (e.key === 'Escape') { setShowCommands(false); setReplyingTo(null) }
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && document.activeElement !== inputRef.current) {
+        e.preventDefault(); setShowCommands(true); inputRef.current?.focus()
+      }
+      if (e.key === 'Escape') { setShowCommands(false); setContextMenu(null); setDeleteConfirm(null) }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const activeSession = sessions.find(s => s.id === activeId)
-  const totalTokens = activeSession ? (activeSession.input_tokens + activeSession.output_tokens + activeSession.cache_read_tokens + activeSession.cache_write_tokens + activeSession.reasoning_tokens) : 0
-  const sources = [...new Set(sessions.map(s => s.source).filter(Boolean))].sort()
   const filtered = sessions
     .filter(s => !search || (s.title || s.preview || s.id).toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
@@ -377,254 +353,269 @@ export default function ChatPage() {
       return sortOrder === 'desc' ? bT - aT : aT - bT
     })
 
-  const groupedMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant').reduce<Message[][]>((groups, m, i) => {
-    if (i === 0 || messages[i - 1].role !== m.role) groups.push([m])
-    else groups[groups.length - 1].push(m)
-    return groups
-  }, [])
+  const grouped: Record<string, SessionSummary[]> = {
+    today: [], yesterday: [], week: [], month: [], older: []
+  }
+  const now = Date.now() / 1000
+  for (const s of filtered) {
+    const ts = s.last_active || s.started_at
+    const age = now - ts
+    if (age < 86400) grouped.today.push(s)
+    else if (age < 172800) grouped.yesterday.push(s)
+    else if (age < 604800) grouped.week.push(s)
+    else if (age < 2592000) grouped.month.push(s)
+    else grouped.older.push(s)
+  }
+
+  const renderGroup = (label: string, items: SessionSummary[]) => {
+    if (!items.length) return null
+    return (
+      <div className="mb-3">
+        <div className="text-[9px] font-semibold text-[var(--text-4)] uppercase tracking-wider px-3 py-1.5">{label}</div>
+        {items.map(s => (
+          <button key={s.id} onClick={() => { loadSession(s.id); setSidebarOpen(false) }}
+            className={`w-full text-left px-3 py-2.5 hover:bg-[var(--surface-2)] transition-all border-b border-[var(--line)]/50 last:border-0 group ${activeId === s.id ? 'bg-[var(--accent)]/10 border-l-2 border-l-[var(--accent)]' : 'border-l-2 border-l-transparent'}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <div className={`w-5 h-5 rounded-full ${getAvatarClass(s.source)} flex items-center justify-center text-[8px] font-bold text-black shrink-0`}>
+                    {getInitial(s.title || s.id)}
+                  </div>
+                  <span className="text-[12px] font-medium text-[var(--text)] truncate">{s.title || s.preview || 'Untitled'}</span>
+                </div>
+                <div className="flex items-center gap-2 ml-6.5">
+                  <SourceBadge source={s.source} />
+                  {s.model && <span className="text-[9px] text-[var(--text-4)] font-mono">{s.model.split('/').pop()}</span>}
+                  <span className="text-[9px] text-[var(--text-4)]">{timeAgo(s.last_active || s.started_at)}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(s.id) }}
+                  className="p-1 rounded hover:bg-[var(--down)]/20 text-[var(--text-4)] hover:text-[var(--down)] transition-all">
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+            {deleteConfirm === s.id && (
+              <div className="mt-2 ml-6.5 p-2 rounded-lg bg-[var(--down)]/10 border border-[var(--down)]/30 flex items-center gap-2">
+                <span className="text-[10px] text-[var(--text-2)]">Delete?</span>
+                <button onClick={() => deleteSession(s.id)} className="text-[10px] px-2 py-0.5 rounded bg-[var(--down)] text-white">Yes</button>
+                <button onClick={() => setDeleteConfirm(null)} className="text-[10px] px-2 py-0.5 rounded bg-[var(--surface-2)] text-[var(--text-2)]">No</button>
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    )
+  }
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] bg-[var(--bg)] text-[var(--text)] relative overflow-hidden">
-      {sidebarOpen && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
-
-      {/* Sessions sidebar */}
-      <div className={`fixed md:relative inset-y-0 left-0 z-50 md:z-auto w-80 md:w-72 border-r border-[var(--line)] flex flex-col bg-[var(--bg)] md:bg-transparent transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        <div className="p-3 border-b border-[var(--line)]">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-semibold text-[var(--text-3)] uppercase tracking-[0.12em]">Sessions</span>
-            <button onClick={() => { setActiveId(''); setMessages([]); setSidebarOpen(false); inputRef.current?.focus() }}
-              className="text-[11px] px-3 py-1.5 rounded-full bg-[var(--accent)] text-black font-semibold hover:opacity-90 active:scale-95 transition-all shadow-lg shadow-[var(--accent)]/20">
-              + New
-            </button>
-          </div>
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="w-full px-3 py-2 rounded-xl bg-[var(--surface-2)] border border-[var(--line)] text-sm text-[var(--text)] placeholder-[var(--text-3)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/30 transition-all" />
-          <div className="flex gap-1.5 mt-2 flex-wrap">
-            <button onClick={() => setSourceFilter('')}
-              className={`text-[10px] px-2.5 py-1 rounded-full transition-all font-medium ${!sourceFilter ? 'bg-[var(--accent)] text-black shadow-md shadow-[var(--accent)]/20' : 'bg-[var(--surface-2)] text-[var(--text-3)] border border-[var(--line)] hover:border-[var(--accent)]/50'}`}>
-              All
-            </button>
-            {sources.slice(0, 6).map(s => (
-              <button key={s} onClick={() => setSourceFilter(sourceFilter === s ? '' : s)}
-                className={`text-[10px] px-2.5 py-1 rounded-full capitalize transition-all font-medium ${sourceFilter === s ? 'text-white shadow-md' : 'bg-[var(--surface-2)] text-[var(--text-3)] border border-[var(--line)] hover:border-[var(--accent)]/50'}`}
-                style={sourceFilter === s ? { backgroundColor: SOURCE_COLORS[s] || '#94a3b8' } : {}}>
-                {s}
+    <div className="flex h-[calc(100vh-8rem)] md:h-screen -mx-4 md:mx-0 md:rounded-2xl overflow-hidden border border-[var(--line)]/50 bg-[var(--bg)] shadow-2xl shadow-black/20">
+      {/* Sidebar */}
+      <div className={`${sidebarOpen ? 'w-72' : 'w-0'} shrink-0 border-r border-[var(--line)] bg-[var(--bg)]/80 backdrop-blur-xl transition-all duration-300 flex flex-col overflow-hidden`}>
+        {/* Sidebar header */}
+        <div className="p-3 border-b border-[var(--line)] space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[var(--accent)] to-[#00c8ff] flex items-center justify-center text-black font-bold text-sm shadow-lg shadow-[var(--accent)]/20">H</div>
+              <div>
+                <h1 className="text-[13px] font-bold text-[var(--text)]">GlyteOS</h1>
+                <p className="text-[9px] text-[var(--text-4)]">Hermes Mission Control</p>
+              </div>
+            </div>
+            <div className="flex gap-0.5">
+              <button onClick={() => { setActiveId(''); setMessages([]); setLoadSessionsKey(k => k + 1) }}
+                className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--text-3)] hover:text-[var(--accent)] transition-all" title="New chat">
+                <Plus className="w-4 h-4" />
               </button>
-            ))}
+              <button onClick={() => setSidebarOpen(false)} className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--text-3)] hover:text-[var(--text)] transition-all md:hidden">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-4)]" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search conversations..."
+              className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[var(--surface-1)] border border-[var(--line)] text-[12px] text-[var(--text)] placeholder-[var(--text-3)] focus:outline-none focus:border-[var(--accent)] transition-colors" />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-0.5 chat-scroll">
-          {loading && <div className="space-y-2 p-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-14 bg-[var(--surface-2)] rounded-xl animate-pulse" />)}</div>}
-          {filtered.map(s => {
-            const isActive = s.id === activeId
-            const isRecent = s.last_active && (Date.now() / 1000 - s.last_active < 300)
-            return (
-              <button key={s.id} onClick={() => { setActiveId(s.id); setSidebarOpen(false) }}
-                className={`w-full text-left p-2.5 rounded-xl transition-all ${isActive ? 'bg-[var(--accent)]/10 border border-[var(--accent)]/40 session-active' : 'hover:bg-[var(--surface-2)] border border-transparent'}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-medium truncate leading-tight">{s.title || s.preview?.slice(0, 40) || s.id.slice(0, 12)}</div>
-                    <div className="flex gap-1.5 mt-1 text-[10px] text-[var(--text-3)] items-center flex-wrap">
-                      <SourceBadge source={s.source} />
-                      <span className="font-mono">{s.model || '?'}</span>
-                      <span>{s.message_count} msgs</span>
-                      <span>{timeAgo(s.last_active || s.started_at)}</span>
-                    </div>
-                  </div>
-                  {isRecent ? (
-                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-[var(--up)]/20 text-[var(--up)] shrink-0 font-semibold glow-pulse">active</span>
-                  ) : s.ended_at ? (
-                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/5 text-[var(--text-4)] shrink-0">ended</span>
-                  ) : null}
-                </div>
-              </button>
-            )
-          })}
+        {/* Session list */}
+        <div className="flex-1 overflow-y-auto overscroll-contain">
+          {renderGroup('Today', grouped.today)}
+          {renderGroup('Yesterday', grouped.yesterday)}
+          {renderGroup('This Week', grouped.week)}
+          {renderGroup('This Month', grouped.month)}
+          {renderGroup('Older', grouped.older)}
+          {filtered.length === 0 && (
+            <div className="p-4 text-center">
+              <MessageSquare className="w-8 h-8 text-[var(--text-4)] mx-auto mb-2" />
+              <p className="text-[11px] text-[var(--text-4)]">No conversations yet</p>
+            </div>
+          )}
+        </div>
+        {/* Sidebar footer */}
+        <div className="p-2 border-t border-[var(--line)] flex items-center justify-between">
+          <button onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+            className="text-[10px] text-[var(--text-4)] hover:text-[var(--text-3)] px-2 py-1 rounded hover:bg-[var(--surface-2)] transition-all">
+            {sortOrder === 'desc' ? 'Oldest first' : 'Newest first'}
+          </button>
+          <span className="text-[9px] text-[var(--text-4)]">{sessions.length} chats</span>
         </div>
       </div>
 
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <InstallBanner />
-        {/* Header */}
+      <div className="flex-1 flex flex-col min-w-0 bg-[var(--bg)]">
+        {/* Chat header */}
         <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 border-b border-[var(--line)] shrink-0 bg-[var(--bg)]/80 backdrop-blur-xl z-10">
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-[var(--text-3)] hover:text-[var(--text)] p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-all md:hidden">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            <ArrowLeft className="w-4 h-4" />
           </button>
-          {activeSession ? (
-            <>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-black shrink-0" style={{ background: `linear-gradient(135deg, ${SOURCE_COLORS[activeSession.source] || '#00f0ff'}, ${SOURCE_COLORS[activeSession.source] || '#00f0ff'}80)` }}>
-                {getInitial(activeSession.source)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold truncate">{activeSession.title || activeSession.id.slice(0, 12)}</h2>
-                </div>
-                <div className="flex gap-3 mt-0.5 text-[10px] text-[var(--text-3)]">
-                  <SourceBadge source={activeSession.source} />
-                  {activeSession.model && <span className="font-mono">{activeSession.model}</span>}
-                  <span>{activeSession.message_count} msgs</span>
-                  {totalTokens > 0 && <span className="font-mono">{formatTokens(totalTokens)} tokens</span>}
-                  {activeSession.estimated_cost_usd ? <span className="text-[var(--up)] font-mono">${activeSession.estimated_cost_usd.toFixed(4)}</span> : null}
-                </div>
-              </div>
-              <ModelSelector current={model || activeSession.model} onChange={setModel} />
-              <button onClick={() => { setActiveId(''); setMessages([]); inputRef.current?.focus() }}
-                className="text-[11px] px-3 py-1.5 rounded-full bg-[var(--surface-2)] border border-[var(--line)] text-[var(--text-3)] hover:text-[var(--text)] hover:border-[var(--accent)]/50 transition-all hidden md:block">
-                New
-              </button>
-            </>
-          ) : (
-            <div className="flex-1">
-              <h2 className="text-sm font-semibold text-[var(--text-3)]">New conversation</h2>
+          <div className="w-8 h-8 rounded-full avatar-gradient-1 flex items-center justify-center text-[11px] font-bold text-black">H</div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-[13px] font-semibold text-[var(--text)] truncate">
+              {activeId ? (sessions.find(s => s.id === activeId)?.title || 'Chat') : 'New conversation'}
+            </h2>
+            <div className="flex items-center gap-1.5">
+              {reqStatus === 'done' && <span className="text-[9px] text-green-400 flex items-center gap-0.5"><CheckCheck className="w-3 h-3" /> ready</span>}
+              {reqStatus === 'running' && <span className="text-[9px] text-[var(--accent)] flex items-center gap-0.5"><Loader2 className="w-3 h-3 animate-spin" /> typing</span>}
+              {reqStatus === 'queued' && <span className="text-[9px] text-[var(--text-4)]">queued</span>}
+              {reqStatus === 'failed' && <span className="text-[9px] text-[var(--down)] flex items-center gap-0.5"><AlertCircle className="w-3 h-3" /> error</span>}
             </div>
-          )}
+          </div>
+          <div className="flex items-center gap-1">
+            {activeId && (
+              <button onClick={() => { setActiveId(''); setMessages([]) }}
+                className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--text-3)] hover:text-[var(--text)] transition-all md:hidden" title="Close">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            <ModelSelector current={model} onChange={setModel} />
+          </div>
         </div>
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 md:px-4 py-4 scroll-smooth chat-scroll">
-          {msgLoading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="space-y-4 w-full max-w-2xl">
-                {Array.from({ length: 3 }).map((_, i) => <div key={i} className={`h-16 bg-[var(--surface-2)] rounded-2xl animate-pulse ${i % 2 === 0 ? 'ml-auto w-3/4' : 'mr-auto w-2/3'}`} />)}
+        <div className="flex-1 overflow-y-auto overscroll-contain px-3 md:px-4 py-4 space-y-1" onScroll={onScroll}>
+          {messages.length === 0 && !sending && (
+            <div className="flex flex-col items-center justify-center h-full text-center px-4 fade-in-up">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[var(--accent)]/20 to-[#00c8ff]/10 flex items-center justify-center mb-3 border border-[var(--accent)]/20">
+                <MessageSquare className="w-8 h-8 text-[var(--accent)]" />
               </div>
-            </div>
-          ) : messages.length === 0 && !sending ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center max-w-sm fade-in-up">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full avatar-gradient-1 flex items-center justify-center text-2xl font-bold text-black glow-pulse">H</div>
-                <p className="text-lg font-semibold text-[var(--text)] mb-1">Hermes Chat</p>
-                <p className="text-sm text-[var(--text-3)] mb-5">Send a message or use <code className="text-[var(--accent)] font-mono">/</code> for commands</p>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {['Say hello', 'What can you do?', '/help', '/status'].map(s => (
-                    <button key={s} onClick={() => { setInput(s); inputRef.current?.focus() }}
-                      className="text-[11px] px-3 py-1.5 rounded-full bg-[var(--surface-2)] border border-[var(--line)] text-[var(--text-3)] hover:text-[var(--accent)] hover:border-[var(--accent)]/50 transition-all">
-                      {s}
-                    </button>
-                  ))}
-                </div>
+              <h3 className="text-[15px] font-semibold text-[var(--text)] mb-1">Start a conversation</h3>
+              <p className="text-[12px] text-[var(--text-3)] mb-4 max-w-xs">Send a message to Hermes. Use `/` for commands, hold mic to talk.</p>
+              <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
+                {[
+                  { label: 'Say hello', text: 'Hello Hermes!' },
+                  { label: 'What can you do?', text: 'What can you do?' },
+                  { label: '/status', text: '/status' },
+                  { label: '/help', text: '/help' },
+                ].map(s => (
+                  <button key={s.label} onClick={() => { setInput(s.text); inputRef.current?.focus() }}
+                    className="px-3 py-2 rounded-xl bg-[var(--surface-1)] border border-[var(--line)] text-[11px] text-[var(--text-3)] hover:text-[var(--text)] hover:border-[var(--accent)]/30 transition-all">
+                    {s.label}
+                  </button>
+                ))}
               </div>
-            </div>
-          ) : (
-            <div className="max-w-3xl mx-auto space-y-1">
-              {groupedMessages.map((group, gi) => {
-                const isUser = group[0].role === 'user'
-                const msg = group[0]
-                return (
-                  <div key={`${msg.id}-${gi}`} className={`flex ${isUser ? 'justify-end' : 'justify-start'} group msg-in`}>
-                    <div className={`max-w-[85%] md:max-w-[75%] ${isUser ? 'order-2' : 'order-1'}`}>
-                      {!isUser && (
-                        <div className="flex items-center gap-2 mb-1 ml-1">
-                          <div className={`w-7 h-7 rounded-full ${getAvatarClass(msg.session_id || 'default')} flex items-center justify-center text-[10px] font-bold text-black`}>H</div>
-                          <span className="text-[11px] font-semibold text-[var(--text)]">Hermes</span>
-                          <span className="text-[10px] text-[var(--text-4)] font-mono">{formatTime(msg.timestamp)}</span>
-                        </div>
-                      )}
-                      <div className={`rounded-2xl px-3.5 py-2.5 ${
-                        isUser
-                          ? 'bg-gradient-to-br from-[var(--accent)] to-[#00c8ff] text-black rounded-br-md shadow-lg shadow-[var(--accent)]/15'
-                          : 'bg-[var(--surface-2)] border border-[var(--line)] rounded-bl-md hover:border-[var(--line-strong)] transition-colors'
-                      }`}>
-                        {isUser && (
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-[11px] font-semibold text-black/70">You</span>
-                            <span className="text-[10px] text-black/40 font-mono">{formatTime(msg.timestamp)}</span>
-                          </div>
-                        )}
-                        {group.map(m => (
-                          <div key={m.id}>
-                            {m.content && <MessageContent content={m.content} role={m.role} />}
-                            {!!m.tool_calls && (
-                              <details className="mt-2">
-                                <summary className="text-[10px] cursor-pointer text-[var(--accent)] hover:underline">Tool calls ({Array.isArray(m.tool_calls) ? (m.tool_calls as unknown[]).length : 1})</summary>
-                                <pre className="text-[10px] mt-1 p-2.5 rounded-xl overflow-x-auto font-mono bg-black/30 max-h-48 overflow-y-auto border border-white/5">{JSON.stringify(m.tool_calls, null, 2)}</pre>
-                              </details>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      <div className={`flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? 'justify-end' : 'justify-start'} ml-1`}>
-                        <button onClick={() => {
-                            const text = group.map(g => g.content || '').join('\n')
-                            if (isUser) { setInput(text); inputRef.current?.focus() }
-                            else { navigator.clipboard.writeText(text).catch(() => {}) }
-                          }}
-                          className="text-[10px] px-2 py-0.5 rounded-md hover:bg-[var(--surface-2)] text-[var(--text-3)] hover:text-[var(--text)] transition-all">
-                          {isUser ? 'Edit' : 'Copy'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-              {sending && <TypingIndicator status={reqStatus} />}
-              <div ref={endRef} />
             </div>
           )}
+
+          {messages.map((msg, i) => {
+            const isUser = msg.role === 'user'
+            const isLast = i === messages.length - 1
+            const showAvatar = !isUser && (isLast || messages[i + 1]?.role !== msg.role)
+            return (
+              <div key={`${msg.id}-${i}`} className={`flex ${isUser ? 'justify-end' : 'justify-start'} group msg-in`}>
+                <div className={`flex items-end gap-2 max-w-[85%] md:max-w-[75%] ${isUser ? 'flex-row-reverse' : ''}`}>
+                  {!isUser && (
+                    <div className={`w-7 h-7 rounded-full ${getAvatarClass(msg.session_id || 'default')} flex items-center justify-center text-[10px] font-bold text-black shrink-0 ${showAvatar ? 'opacity-100' : 'opacity-0'}`}>
+                      H
+                    </div>
+                  )}
+                  <div className={`relative ${isUser ? 'order-1' : ''}`}>
+                    <div className={`px-3.5 py-2.5 rounded-2xl ${isUser ? 'bg-gradient-to-br from-[var(--accent)] to-[#00c8ff] text-black rounded-br-md' : 'bg-[var(--surface-2)] border border-[var(--line)] text-[var(--text)] rounded-bl-md'} shadow-lg ${isUser ? 'shadow-[var(--accent)]/10' : 'shadow-black/10'}`}>
+                      <MessageContent content={msg.content || ''} role={msg.role} />
+                    </div>
+                    {/* Message actions */}
+                    <div className={`flex items-center gap-0.5 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? 'justify-end' : 'justify-start'}`}>
+                      <button onClick={() => setContextMenu(contextMenu?.id === msg.id ? null : { id: msg.id, x: 0, y: 0 })}
+                        className="p-1 rounded hover:bg-[var(--surface-2)] text-[var(--text-4)] hover:text-[var(--text-3)]">
+                        <MoreVertical className="w-3 h-3" />
+                      </button>
+                    </div>
+                    {/* Context menu */}
+                    {contextMenu?.id === msg.id && (
+                      <div className="absolute z-50 bottom-full mb-1 left-0 bg-[var(--surface-1)] border border-[var(--line)] rounded-xl shadow-2xl shadow-black/40 overflow-hidden min-w-[140px]">
+                        <button onClick={() => { copyToClipboard(msg.content || ''); setContextMenu(null) }} className="w-full text-left px-3 py-2 hover:bg-[var(--accent)]/10 flex items-center gap-2 text-[11px] text-[var(--text-2)]">
+                          <Copy className="w-3 h-3" /> Copy
+                        </button>
+                        {isUser && (
+                          <button onClick={() => { setInput(msg.content || ''); inputRef.current?.focus(); setContextMenu(null) }} className="w-full text-left px-3 py-2 hover:bg-[var(--accent)]/10 flex items-center gap-2 text-[11px] text-[var(--text-2)]">
+                            <Edit3 className="w-3 h-3" /> Edit
+                          </button>
+                        )}
+                        <button onClick={() => { if (confirm('Delete this message?')) deleteMessage(msg.session_id, msg.id) }} className="w-full text-left px-3 py-2 hover:bg-[var(--down)]/10 flex items-center gap-2 text-[11px] text-[var(--down)]">
+                          <Trash2 className="w-3 h-3" /> Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className={`text-[9px] text-[var(--text-4)] mt-1 px-1 ${isUser ? 'text-right' : 'text-left'} w-full`}>
+                  {formatTime(msg.timestamp)}
+                  {isUser && <span className="ml-1"><Check className="w-3 h-3 inline" /></span>}
+                </div>
+              </div>
+            )
+          })}
+          {sending && <TypingIndicator status={reqStatus} />}
+          <div ref={endRef} />
         </div>
 
-        {/* Reply bar */}
-        {replyingTo && (
-          <div className="px-3 md:px-4 py-2 bg-[var(--surface-1)] border-t border-[var(--line)] flex items-center justify-between slide-in-right">
-            <div className="text-xs text-[var(--text-3)]">
-              Replying to <span className="text-[var(--accent)] font-mono">#{replyingTo.id}</span>: {(replyingTo.content || '').slice(0, 60)}
-            </div>
-            <button onClick={() => setReplyingTo(null)} className="text-[var(--text-3)] hover:text-[var(--text)] text-xs p-1">✕</button>
-          </div>
-        )}
-
         {/* Input area */}
-        <div className="border-t border-[var(--line)] bg-[var(--bg)]/90 backdrop-blur-xl shrink-0 pb-safe">
-          <div className="max-w-3xl mx-auto p-3 md:p-4">
-            {showCommands && (
-              <CommandPalette onSelect={(cmd) => {
-                setShowCommands(false)
-                if (cmd === '/clear') { setMessages([]); setSending(false); setReqStatus(''); return }
-                if (cmd === '/new') { setActiveId(''); setMessages([]); setSending(false); setReqStatus(''); loadSessions(); return }
-                setInput(cmd + ' '); inputRef.current?.focus()
-              }} onClose={() => setShowCommands(false)} />
-            )}
-            <div className="flex gap-2 items-end">
-              <div className="flex-1 relative">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={e => { setInput(e.target.value); if (e.target.value.startsWith('/')) setShowCommands(true) }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
-                    if (e.key === '/' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); setShowCommands(true) }
-                  }}
-                  onFocus={() => { if (input.startsWith('/')) setShowCommands(true) }}
-                  placeholder="Message Hermes... (/ for commands)"
-                  rows={1}
-                  className="w-full px-4 py-3 pr-10 rounded-2xl text-[13px] text-[var(--text)] bg-[var(--surface-1)] border border-[var(--line)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 placeholder-[var(--text-3)] resize-none transition-all"
-                  style={{ minHeight: '44px', maxHeight: '120px' }}
-                />
+        <div className="shrink-0 p-3 md:p-4 border-t border-[var(--line)] bg-[var(--bg)]/80 backdrop-blur-xl">
+          {deleteConfirm && (
+            <div className="mb-2 p-2 rounded-lg bg-[var(--down)]/10 border border-[var(--down)]/30 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-[var(--down)]" />
+              <span className="text-[11px] text-[var(--text-2)] flex-1">Delete this conversation?</span>
+              <button onClick={() => { if (deleteConfirm) deleteSession(deleteConfirm) }} className="text-[10px] px-2.5 py-1 rounded-lg bg-[var(--down)] text-white font-medium">Delete</button>
+              <button onClick={() => setDeleteConfirm(null)} className="text-[10px] px-2.5 py-1 rounded-lg bg-[var(--surface-2)] text-[var(--text-2)]">Cancel</button>
+            </div>
+          )}
+          {showCommands && (
+            <CommandPalette onSelect={(cmd) => { setInput(cmd + ' '); setShowCommands(false); inputRef.current?.focus() }} onClose={() => setShowCommands(false)} />
+          )}
+          <div className="flex items-end gap-2">
+            <div className="flex-1 relative">
+              <textarea ref={inputRef} value={input} onChange={e => { setInput(e.target.value); if (e.target.value.startsWith('/')) setShowCommands(true) }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+                }}
+                placeholder="Message Hermes... (/ for commands)"
+                rows={1}
+                className="w-full px-4 py-3 pr-20 rounded-2xl text-[13px] text-[var(--text)] bg-[var(--surface-1)] border border-[var(--line)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 placeholder-[var(--text-3)] resize-none transition-all"
+                style={{ minHeight: '44px', maxHeight: '120px' }}
+              />
+              <div className="absolute right-2 bottom-2 flex items-center gap-1">
                 <button onClick={() => setShowCommands(!showCommands)}
-                  className="absolute right-3 bottom-2.5 text-[var(--text-3)] hover:text-[var(--accent)] text-xs font-mono transition-colors">
-                  /
+                  className="p-1.5 rounded-lg text-[var(--text-4)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-all">
+                  <span className="text-[10px] font-mono font-bold">/</span>
+                </button>
+                <button className="p-1.5 rounded-lg text-[var(--text-4)] hover:text-[var(--accent)] hover:bg-[var(--surface-2)] transition-all">
+                  <Paperclip className="w-4 h-4" />
                 </button>
               </div>
-              <VoiceInput onSend={(text) => { setInput(text); setTimeout(() => sendMessage(), 50) }} disabled={sending} />
-              <button onClick={sendMessage} disabled={!input.trim() || sending}
-                className="px-5 py-3 rounded-2xl text-[13px] font-semibold text-black bg-gradient-to-r from-[var(--accent)] to-[#00c8ff] hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-lg shadow-[var(--accent)]/20">
-                {sending ? (
-                  <span className="flex items-center gap-1">
-                    <span className="typing-dot" style={{ animationDelay: '0ms' }} />
-                    <span className="typing-dot" style={{ animationDelay: '200ms' }} />
-                    <span className="typing-dot" style={{ animationDelay: '400ms' }} />
-                  </span>
-                ) : 'Send'}
-              </button>
             </div>
-            <div className="flex items-center justify-between mt-2 px-1">
-              <div className="text-[10px] text-[var(--text-4)]">
-                {model && <span className="text-[var(--accent)] font-mono">Model: {model}</span>}
-              </div>
-              <div className="text-[10px] text-[var(--text-4)] flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--line)] text-[9px] font-mono">/</kbd> commands
-              </div>
+            <button onClick={sendMessage} disabled={!input.trim() || sending}
+              className="px-4 py-3 rounded-2xl text-[13px] font-semibold text-black bg-gradient-to-r from-[var(--accent)] to-[#00c8ff] hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 shadow-lg shadow-[var(--accent)]/20 shrink-0">
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </button>
+          </div>
+          <div className="flex items-center justify-between mt-1.5 px-1">
+            <div className="text-[10px] text-[var(--text-4)]">
+              {model && <span className="text-[var(--accent)] font-mono">{model}</span>}
+            </div>
+            <div className="text-[10px] text-[var(--text-4)] flex items-center gap-2">
+              <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--line)] text-[9px] font-mono">/</kbd> commands</span>
+              <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--line)] text-[9px] font-mono">⌘N</kbd> new</span>
             </div>
           </div>
         </div>
