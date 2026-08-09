@@ -396,4 +396,128 @@ html.light {
   .panel-interactive:active,
   .btn-primary:active,
   .btn-ghost:active { transform: none; }
+  .msg-in { animation: none; opacity: 1; }
+  .msg-pop { animation: none; opacity: 1; transform: none; }
+}
+
+/* ── Message animations ────────────────────────────────── */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes msg-pop {
+  0%   { transform: scale(0.95); }
+  60%  { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px var(--accent-glow); }
+  50%      { box-shadow: 0 0 18px var(--accent-glow), 0 0 30px rgba(0, 240, 255, 0.15); }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.msg-in {
+  animation: msg-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.msg-pop {
+  animation: msg-pop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+.slide-in-right {
+  animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.fade-in-up {
+  animation: fade-in-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── Glass morphism cards ───────────────────────────────── */
+.glass {
+  background: rgba(16, 17, 19, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--line);
+  transition: all 0.3s var(--ease);
+}
+.glass:hover {
+  border-color: rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.1);
+}
+
+/* ── Gradient avatars ───────────────────────────────────── */
+.avatar-gradient-1 { background: linear-gradient(135deg, #00f0ff, #00a8b5); }
+.avatar-gradient-2 { background: linear-gradient(135deg, #00ff88, #00a870); }
+.avatar-gradient-3 { background: linear-gradient(135deg, #8b5cf6, #6366f1); }
+.avatar-gradient-4 { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+.avatar-gradient-5 { background: linear-gradient(135deg, #ec4899, #8b5cf6); }
+
+/* ── Touch feedback for mobile ──────────────────────────── */
+@media (hover: none) {
+  button:active, [role="button"]:active {
+    transform: scale(0.97);
+    transition: transform 0.1s ease;
+  }
+}
+
+/* ── Bottom safe area for mobile ────────────────────────── */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Typing indicator glow ──────────────────────────────── */
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+
+/* ── Session active indicator ───────────────────────────── */
+.session-active {
+  position: relative;
+}
+.session-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: var(--up);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 6px rgba(0, 255, 136, 0.4);
+}
+
+/* ── Scrollbar for chat ─────────────────────────────────── */
+.chat-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 240, 255, 0.15);
+  border-radius: 99px;
+}
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 240, 255, 0.3);
+}
+
+/* ── Install prompt banner ──────────────────────────────── */
+.install-banner {
+  background: linear-gradient(135deg, rgba(0, 240, 255, 0.1), rgba(0, 255, 136, 0.05));
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
