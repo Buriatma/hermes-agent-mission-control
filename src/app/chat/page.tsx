@@ -9,7 +9,13 @@ import {
   Loader2, X, HelpCircle, Terminal, Zap, Clock, ArrowLeft,
   Pin, Volume2, VolumeX, Download, Reply, Smile,
   ChevronRight, Hash, Command, PanelLeftClose, PanelLeft,
-  Home, FolderOpen, Brain, ClipboardList, Image
+  Home, FolderOpen, Brain, ClipboardList, Image,
+  RefreshCw, Undo2, Activity, History, Play, Cloud,
+  ListOrdered, Target, GitCompareArrows, RotateCcw, GraduationCap,
+  Database, Lightbulb, Boxes, Sparkles, Layers, PlugZap,
+  BarChart3, TrendingUp, Wallet, User, UserCircle, Tag,
+  ShieldCheck, ShieldX, RotateCw, Square, Minimize2, GitBranch, Cpu,
+  Flame, Info, Columns3
 } from 'lucide-react'
 
 // ─── web audio sounds ──────────────────────────────────────────
@@ -577,42 +583,90 @@ export default function ChatPage() {
 function CommandList({ onSelect, onClose }: { onSelect: (c: string) => void; onClose: () => void }) {
   const [q, setQ] = useState('')
   const cmds = [
-    { name: '/help', desc: 'Show commands', icon: HelpCircle },
-    { name: '/new', desc: 'New conversation', icon: Plus },
-    { name: '/clear', desc: 'Clear messages', icon: Trash2 },
-    { name: '/model', desc: 'Switch model', icon: Terminal },
-    { name: '/status', desc: 'System status', icon: Zap },
-    { name: '/search', desc: 'Search history', icon: Search },
-    { name: '/brief', desc: 'Daily briefing', icon: Clock },
-    { name: '/cost', desc: 'Usage & cost', icon: ClipboardList },
-    { name: '/export', desc: 'Export chat', icon: Download },
-    { name: '/pin', desc: 'Pin conversation', icon: Pin },
-    { name: '/memory', desc: 'Memory entries', icon: Brain },
-    { name: '/git', desc: 'Git status', icon: Terminal },
-    { name: '/health', desc: 'Health check', icon: Check },
-    { name: '/agents', desc: 'List agents', icon: Zap },
+    // Session
+    { name: '/new', desc: 'Fresh session', icon: Plus, group: 'Session' },
+    { name: '/clear', desc: 'Clear messages', icon: Trash2, group: 'Session' },
+    { name: '/retry', desc: 'Resend last message', icon: RefreshCw, group: 'Session' },
+    { name: '/undo', desc: 'Back up N turns', icon: Undo2, group: 'Session' },
+    { name: '/title', desc: 'Name the session', icon: Hash, group: 'Session' },
+    { name: '/compress', desc: 'Compress context', icon: Minimize2, group: 'Session' },
+    { name: '/stop', desc: 'Kill background processes', icon: Square, group: 'Session' },
+    { name: '/status', desc: 'Session, model, token info', icon: Activity, group: 'Session' },
+    { name: '/sessions', desc: 'Browse previous sessions', icon: History, group: 'Session' },
+    { name: '/resume', desc: 'Resume named session', icon: Play, group: 'Session' },
+    { name: '/branch', desc: 'Branch the session', icon: GitBranch, group: 'Session' },
+    { name: '/background', desc: 'Run prompt in background', icon: Cloud, group: 'Session' },
+    { name: '/queue', desc: 'Queue prompt for next turn', icon: ListOrdered, group: 'Session' },
+    { name: '/goal', desc: 'Standing goal across turns', icon: Target, group: 'Session' },
+    { name: '/diff', desc: 'Git changes in workspace', icon: GitCompareArrows, group: 'Session' },
+    { name: '/rollback', desc: 'Filesystem checkpoints', icon: RotateCcw, group: 'Session' },
+    // Config
+    { name: '/model', desc: 'Switch model (provider:model)', icon: Cpu, group: 'Config' },
+    { name: '/personality', desc: 'Set a personality', icon: Smile, group: 'Config' },
+    { name: '/reasoning', desc: 'Reasoning effort/display', icon: Brain, group: 'Config' },
+    { name: '/fast', desc: 'Priority processing tier', icon: Zap, group: 'Config' },
+    { name: '/voice', desc: 'Voice mode on/off/tts', icon: Mic, group: 'Config' },
+    { name: '/yolo', desc: 'Toggle approval bypass', icon: Flame, group: 'Config' },
+    { name: '/footer', desc: 'Runtime metadata footer', icon: Info, group: 'Config' },
+    // Tools & Skills
+    { name: '/skills', desc: 'Search/install skills', icon: BookOpen, group: 'Tools' },
+    { name: '/learn', desc: 'Learn a reusable skill', icon: GraduationCap, group: 'Tools' },
+    { name: '/memory', desc: 'Review pending memory writes', icon: Database, group: 'Tools' },
+    { name: '/cron', desc: 'Manage scheduled tasks', icon: Clock, group: 'Tools' },
+    { name: '/suggestions', desc: 'Review suggested automations', icon: Lightbulb, group: 'Tools' },
+    { name: '/blueprint', desc: 'Set up automation blueprint', icon: Boxes, group: 'Tools' },
+    { name: '/curator', desc: 'Skill maintenance', icon: Sparkles, group: 'Tools' },
+    { name: '/kanban', desc: 'Collaboration board', icon: Columns3, group: 'Tools' },
+    { name: '/moa', desc: 'Mixture of Agents preset', icon: Layers, group: 'Tools' },
+    { name: '/reload-skills', desc: 'Re-scan skills dir', icon: RefreshCw, group: 'Tools' },
+    { name: '/reload-mcp', desc: 'Reload MCP servers', icon: PlugZap, group: 'Tools' },
+    // Info
+    { name: '/help', desc: 'Show commands', icon: HelpCircle, group: 'Info' },
+    { name: '/usage', desc: 'Token usage and cost', icon: BarChart3, group: 'Info' },
+    { name: '/insights', desc: 'Usage analytics', icon: TrendingUp, group: 'Info' },
+    { name: '/cost', desc: 'Cost estimate', icon: Wallet, group: 'Info' },
+    { name: '/whoami', desc: 'Access level', icon: User, group: 'Info' },
+    { name: '/profile', desc: 'Active profile info', icon: UserCircle, group: 'Info' },
+    { name: '/update', desc: 'Update Hermes', icon: RefreshCw, group: 'Info' },
+    { name: '/version', desc: 'Show version', icon: Tag, group: 'Info' },
+    // Export / local
+    { name: '/export', desc: 'Export chat', icon: Download, group: 'Local' },
+    { name: '/pin', desc: 'Pin conversation', icon: Pin, group: 'Local' },
+    // Approved local dispatch commands
+    { name: '/approve', desc: 'Approve pending dangerous cmd', icon: ShieldCheck, group: 'Gateway' },
+    { name: '/deny', desc: 'Deny pending dangerous cmd', icon: ShieldX, group: 'Gateway' },
+    { name: '/restart', desc: 'Restart gateway', icon: RotateCw, group: 'Gateway' },
+    { name: '/sethome', desc: 'Set home channel', icon: Home, group: 'Gateway' },
+    { name: '/commands', desc: 'Browse all commands', icon: Command, group: 'Gateway' },
   ]
-  const filtered = cmds.filter(c => c.name.includes(q.toLowerCase()) || c.desc.toLowerCase().includes(q.toLowerCase()))
+  const groups = ['Session', 'Config', 'Tools', 'Info', 'Gateway', 'Local']
+  const filtered = cmds.filter(c => c.name.includes(q.toLowerCase()) || c.desc.toLowerCase().includes(q.toLowerCase()) || (c.group || '').toLowerCase().includes(q.toLowerCase()))
+  const grouped = groups.map(g => ({ group: g, items: filtered.filter(c => c.group === g) })).filter(x => x.items.length)
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute bottom-full left-3 right-3 md:left-4 md:right-4 mb-2 bg-[var(--surface-1)] border border-[var(--line)] rounded-xl shadow-2xl shadow-black/40 overflow-hidden z-50">
-        <div className="p-2 border-b border-[var(--line)]">
+      <div className="absolute bottom-full left-3 right-3 md:left-4 md:right-4 mb-2 bg-[var(--surface-1)] border border-[var(--line)] rounded-xl shadow-2xl shadow-black/40 overflow-hidden z-50 max-h-[50vh] flex flex-col">
+        <div className="p-2 border-b border-[var(--line)] shrink-0">
           <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Type a command..."
             className="w-full px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--line)] text-[13px] text-[var(--text)] placeholder-[var(--text-3)] focus:outline-none focus:border-[var(--accent)]" />
         </div>
-        <div className="max-h-64 overflow-y-auto">
-          {filtered.map(c => {
-            const Icon = c.icon
-            return (
-              <button key={c.name} onClick={() => onSelect(c.name)}
-                className="w-full text-left px-3 py-2.5 hover:bg-[var(--accent)]/10 flex items-center gap-3 border-b border-[var(--line)]/50 last:border-0">
-                <Icon className="w-4 h-4 text-[var(--text-3)]" />
-                <span className="text-[11px] font-mono text-[var(--accent)] font-semibold min-w-[50px]">{c.name}</span>
-                <span className="text-[11px] text-[var(--text-3)]">{c.desc}</span>
-              </button>
-            )
-          })}
+        <div className="flex-1 overflow-y-auto">
+          {grouped.map(({ group, items }) => (
+            <div key={group}>
+              <div className="px-3 pt-2 pb-1 text-[9px] font-semibold text-[var(--text-4)] uppercase tracking-wider">{group}</div>
+              {items.map(c => {
+                const Icon = c.icon
+                return (
+                  <button key={c.name} onClick={() => onSelect(c.name)}
+                    className="w-full text-left px-3 py-2 hover:bg-[var(--accent)]/10 flex items-center gap-3 border-b border-[var(--line)]/50 last:border-0">
+                    <Icon className="w-4 h-4 text-[var(--text-3)]" />
+                    <span className="text-[11px] font-mono text-[var(--accent)] font-semibold min-w-[70px]">{c.name}</span>
+                    <span className="text-[11px] text-[var(--text-3)]">{c.desc}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ))}
           {filtered.length === 0 && <p className="text-xs text-[var(--text-3)] px-3 py-3 text-center">No commands found</p>}
         </div>
       </div>
