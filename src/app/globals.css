@@ -553,3 +553,46 @@ html.light {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
+
+/* ── Markdown body styles for chat ──────────────────────── */
+.markdown-body pre {
+  font-size: 11px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 12px;
+  padding: 12px;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin: 8px 0;
+}
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.markdown-body code {
+  color: var(--accent);
+  background: var(--surface-1);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.markdown-body ul { list-style: disc; padding-left: 20px; }
+.markdown-body ol { list-style: decimal; padding-left: 20px; }
+.markdown-body li { margin: 2px 0; }
+.markdown-body blockquote {
+  border-left: 2px solid var(--accent);
+  padding-left: 12px;
+  color: var(--text-3);
+  font-style: italic;
+  margin: 8px 0;
+}
+.markdown-body a { color: var(--accent); text-decoration: underline; }
+.markdown-body h1 { font-size: 16px; font-weight: 600; margin: 8px 0 4px; }
+.markdown-body h2 { font-size: 15px; font-weight: 600; margin: 8px 0 4px; }
+.markdown-body h3 { font-size: 14px; font-weight: 600; margin: 8px 0 4px; }
+.markdown-body table { width: 100%; }
+.markdown-body th { text-align: left; border: 1px solid var(--line); padding: 4px 8px; font-size: 12px; }
+.markdown-body td { border: 1px solid var(--line); padding: 4px 8px; font-size: 12px; }
+.markdown-body p { margin: 4px 0; }

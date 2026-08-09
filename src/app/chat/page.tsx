@@ -95,7 +95,7 @@ function MessageContent({ content, role }: { content: string; role: string }) {
     return <div className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{content}</div>
   }
   return (
-    <div className="text-[13px] leading-relaxed break-words prose prose-invert prose-sm max-w-none [&_pre]:text-[11px] [&_pre]:font-mono [&_pre]:bg-black/40 [&_pre]:rounded-xl [&_pre]:p-3 [&_pre]:overflow-x-auto [&_pre]:border [&_pre]:border-white/5 [&_pre]:mt-2 [&_pre]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--accent)] [&_blockquote]:pl-3 [&_blockquote]:text-[var(--text-3)] [&_blockquote]:italic [&_a]:text-[var(--accent)] [&_a]:underline [&_h1]:text-base [&_h2]:text-[15px] [&_h3]:text-sm [&_h1],&_h2,&_h3]:font-semibold [&_h1],&_h2,&_h3]:mt-2 [&_h1],&_h2,&_h3]:mb-1 [&_code]:text-[var(--accent)] [&_code]:bg-[var(--surface-1)] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[var(--text-2)] [&_table]:w-full [&_th]:text-left [&_th]:border [&_th]:border-[var(--line)] [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-[var(--line)] [&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px]>
+    <div className="text-[13px] leading-relaxed break-words prose prose-invert prose-sm max-w-none markdown-body">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
         {content}
       </ReactMarkdown>
@@ -105,7 +105,7 @@ function MessageContent({ content, role }: { content: string; role: string }) {
 
 function TypingIndicator({ status }: { status: ReqStatus }) {
   const labels: Record<string, string> = {
-    queued: 'Queued — waiting...',
+    queued: 'Queued - waiting...',
     running: 'Working...',
     '': 'Thinking...',
   }
