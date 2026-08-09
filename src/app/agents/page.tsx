@@ -1,413 +1,182 @@
-"use client";
-
-import { useEffect, useState, useCallback, useRef } from "react";
-import OfficeView from "@/components/OfficeView";
-
-interface AgentActivity {
-  timestamp: string;
-  action: string;
-  result?: string;
-}
+"use client"
+import { useState, useEffect, useCallback } from 'react'
+import { Zap, Send, Loader2, CheckCircle, XCircle, Clock, MessageSquare, Brain, Shield, Mic, Globe, Terminal } from 'lucide-react'
 
 interface Agent {
-  id: string;
-  name: string;
-  emoji: string;
-  role: string;
-  status: "idle" | "working" | "error" | "offline";
-  currentTask?: string;
-  lastActive?: string;
-  tasksCompleted: number;
-  totalCost: number;
-  recentActivity: AgentActivity[];
+  id: string; name: string; role: string; icon: any; color: string; status: string; lastActive: string; tasksCompleted: number
 }
 
-const statusConfig: Record<string, { color: string; dot: string; label: string; pulse?: boolean }> = {
-  idle: { color: "var(--warn)", dot: "var(--warn)", label: "Idle" },
-  working: { color: "var(--accent)", dot: "var(--accent)", label: "Working", pulse: true },
-  error: { color: "var(--down)", dot: "var(--down)", label: "Error" },
-  offline: { color: "var(--text-3)", dot: "var(--text-4)", label: "Offline" },
-  online: { color: "var(--up)", dot: "var(--up)", label: "Online", pulse: true },
-  active: { color: "var(--up)", dot: "var(--up)", label: "Active", pulse: true },
-  mixed: { color: "var(--warn)", dot: "var(--warn)", label: "Partial" },
-};
+const AGENTS: Agent[] = [
+  { id: 'hermes', name: 'Hermes', role: 'Chief of Staff', icon: Zap, color: '#00f0ff', status: 'idle', lastActive: '', tasksCompleted: 0 },
+  { id: 'sage', name: 'Sage', role: 'X Content Specialist', icon: Globe, color: '#00ff88', status: 'idle', lastActive: '', tasksCompleted: 0 },
+  { id: 'knox', name: 'Knox', role: 'Trading Ops', icon: Shield, color: '#ef4444', status: 'idle', lastActive: '', tasksCompleted: 0 },
+  { id: 'nova', name: 'Nova', role: 'YouTube Strategy', icon: Mic, color: '#8b5cf6', status: 'idle', lastActive: '', tasksCompleted: 0 },
+  { id: 'max', name: 'Max', role: 'Web Specialist', icon: Terminal, color: '#f59e0b', status: 'idle', lastActive: '', tasksCompleted: 0 },
+  { id: 'pixel', name: 'Pixel', role: 'UI/UX Designer', icon: Brain, color: '#ec4899', status: 'idle', lastActive: '', tasksCompleted: 0 },
+]
 
-const roleColors: Record<string, string> = {
-  max: "from-amber-500/20 to-amber-600/5 border-amber-500/20",
-  sage: "from-sky-500/20 to-sky-600/5 border-sky-500/20",
-  knox: "from-emerald-500/20 to-emerald-600/5 border-emerald-500/20",
-  nova: "from-purple-500/20 to-purple-600/5 border-purple-500/20",
-  pixel: "from-blue-500/20 to-blue-600/5 border-blue-500/20",
-};
+export default function AgentsPage() {
+  const [agents, setAgents] = useState(AGENTS)
+  const [selectedAgent, setSelectedAgent] = useState<string>('hermes')
+  const [prompt, setPrompt] = useState('')
+  const [sending, setSending] = useState(false)
+  const [response, setResponse] = useState('')
+  const [history, setHistory] = useState<{ role: string; content: string }[]>([])
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
+  const loadAgentStates = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hermes/health')
+      const d = await res.json()
+      const states = d.agents || {}
+      setAgents(prev => prev.map(a => ({
+        ...a,
+        status: states[a.id]?.status || 'idle',
+        lastActive: states[a.id]?.lastActive || '',
+        tasksCompleted: states[a.id]?.tasksCompleted || 0
+      })))
+    } catch {}
+  }, [])
+  useEffect(() => { loadAgentStates() }, [loadAgentStates])
 
-function AgentCard({ agent, isExpanded, onToggle }: { agent: Agent; isExpanded: boolean; onToggle: () => void }) {
-  const status = statusConfig[agent.status] || statusConfig.offline;
+  const sendToAgent = async () => {
+    if (!prompt.trim() || sending) return
+    const agent = agents.find(a => a.id === selectedAgent)
+    const userMsg = { role: 'user', content: prompt }
+    setHistory(prev => [...prev, userMsg])
+    setPrompt(''); setSending(true); setResponse('')
+
+    try {
+      const body: any = {
+        prompt: `You are ${agent?.name} (${agent?.role}). Respond to this message from the operator: ${prompt}`,
+        title: `${agent?.name}: ${prompt.slice(0, 50)}`,
+        kind: 'chat'
+      }
+      const res = await fetch('/api/hermes/dispatch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const d = await res.json()
+      const reqId = d.request?.id
+      if (reqId) {
+        // Poll
+        let done = false; let attempts = 0
+        while (!done && attempts < 30) {
+          await new Promise(r => setTimeout(r, 3000))
+          const rRes = await fetch(`/api/hermes/requests/${reqId}?_=${Date.now()}`)
+          const rData = await rRes.json()
+          const r = rData.request
+          if (r?.status === 'done') {
+            setResponse(r.result || '')
+            setHistory(prev => [...prev, { role: 'assistant', content: r.result || '' }])
+            done = true
+          } else if (r?.status === 'failed') {
+            setResponse('Error: ' + (r.error || 'Failed'))
+            setHistory(prev => [...prev, { role: 'assistant', content: 'Error: ' + (r.error || 'Failed') }])
+            done = true
+          }
+          attempts++
+        }
+      }
+    } catch (e: any) { setResponse('Error: ' + e.message) } finally { setSending(false) }
+  }
+
+  const agent = agents.find(a => a.id === selectedAgent)
 
   return (
-    <div className="panel panel-interactive overflow-hidden">
-      {/* Main card */}
-      <div className="p-5 cursor-pointer" onClick={onToggle}>
-        <div className="flex items-start gap-3.5">
-          {/* Avatar */}
-          <div className="w-12 h-12 rounded-[var(--r-md)] flex items-center justify-center text-2xl shrink-0"
-            style={{ background: "var(--surface-2)", border: "1px solid var(--line)" }}>
-            {agent.emoji}
-          </div>
-
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="relative flex w-2 h-2 shrink-0">
-                {status.pulse && <span className="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping" style={{ background: status.dot }} />}
-                <span className="relative inline-flex w-2 h-2 rounded-full" style={{ background: status.dot }} />
-              </span>
-              <h3 className="text-[14px] font-semibold text-[var(--text)]">{agent.name}</h3>
-              <span className="text-[10px] font-medium" style={{ color: status.color }}>{status.label}</span>
-            </div>
-            <p className="text-[12px] text-[var(--text-3)] mt-1">{agent.role}</p>
-
-            {/* Current task */}
-            {agent.currentTask && agent.status === "working" && (
-              <p className="text-[12px] mt-2 truncate" style={{ color: "var(--accent)" }}>{agent.currentTask}</p>
-            )}
-          </div>
-
-          {/* Stats */}
-          <div className="text-right shrink-0">
-            <div className="num text-[22px] font-semibold text-[var(--text)] leading-none">{agent.tasksCompleted}</div>
-            <div className="eyebrow mt-1.5">tasks</div>
-            {agent.lastActive && (
-              <div className="num text-[10px] text-[var(--text-4)] mt-1">{timeAgo(agent.lastActive)}</div>
-            )}
-          </div>
+    <div className="h-[calc(100vh-8rem)] md:h-screen -mx-4 md:mx-0 md:rounded-2xl overflow-hidden border border-[var(--line)]/50 bg-[var(--bg)] shadow-2xl shadow-black/20 flex">
+      {/* Agents sidebar */}
+      <div className="w-64 border-r border-[var(--line)] flex flex-col shrink-0">
+        <div className="p-4 border-b border-[var(--line)]">
+          <h1 className="text-[14px] font-bold text-[var(--text)]">Agents</h1>
+          <p className="text-[10px] text-[var(--text-4)] mt-1">Direct dispatch to specialized agents</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2">
+          {agents.map(a => {
+            const Icon = a.icon
+            const isActive = selectedAgent === a.id
+            return (
+              <button key={a.id} onClick={() => { setSelectedAgent(a.id); setHistory([]); setResponse('') }}
+                className={`w-full text-left p-3 rounded-xl mb-1 transition-all ${isActive ? 'bg-[var(--surface-2)] border border-[var(--line)]' : 'hover:bg-[var(--surface-2)]/50'}`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${a.color}20` }}>
+                    <Icon className="w-5 h-5" style={{ color: a.color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[13px] font-semibold text-[var(--text)]">{a.name}</span>
+                      <div className={`w-2 h-2 rounded-full ${a.status === 'running' ? 'bg-yellow-400 animate-pulse' : 'bg-[var(--text-4)]'}`} />
+                    </div>
+                    <p className="text-[10px] text-[var(--text-4)] truncate">{a.role}</p>
+                  </div>
+                </div>
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Expanded activity feed */}
-      {isExpanded && (
-        <div className="px-5 py-4 space-y-2.5" style={{ borderTop: "1px solid var(--line)" }}>
-          <h4 className="eyebrow">Recent Activity</h4>
-          {agent.recentActivity.length === 0 ? (
-            <p className="text-[12px] text-[var(--text-3)] py-2">No activity yet</p>
-          ) : (
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {agent.recentActivity.slice(0, 10).map((activity, i) => (
-                <div key={i} className="flex items-start gap-2.5 text-[12px]">
-                  <span className="num text-[var(--text-4)] shrink-0 w-14">{timeAgo(activity.timestamp)}</span>
-                  <span className="text-[var(--text-2)]">{activity.action}</span>
-                  {activity.result && (
-                    <span className="text-[var(--text-3)] ml-auto truncate max-w-[200px]">{activity.result}</span>
-                  )}
-                </div>
-              ))}
-            </div>
+      {/* Chat area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Agent header */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--line)]">
+          {agent && (
+            <>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${agent.color}20` }}>
+                <agent.icon className="w-5 h-5" style={{ color: agent.color }} />
+              </div>
+              <div>
+                <h2 className="text-[14px] font-semibold text-[var(--text)]">{agent.name}</h2>
+                <p className="text-[11px] text-[var(--text-4)]">{agent.role}</p>
+              </div>
+            </>
           )}
         </div>
-      )}
-    </div>
-  );
-}
 
-// ── Live Agent Chat ───────────────────────────────────────
-function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
-  const [input, setInput] = useState("");
-  const [msgs, setMsgs] = useState<{ role: "user"|"assistant"; content: string }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
-
-  async function send() {
-    const text = input.trim();
-    if (!text || loading) return;
-    setInput("");
-    const newMsgs = [...msgs, { role: "user" as const, content: text }];
-    setMsgs(newMsgs);
-    setLoading(true);
-    try {
-      // Route through bridge — real Hermes dispatch, not mock OpenRouter
-      const r = await fetch("/api/hermes/dispatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: `You are ${agent.name} (${agent.role}). Respond to this message from the operator:\n\n${text}`,
-          title: `${agent.name}: ${text.slice(0, 60)}`,
-          kind: "chat",
-        }),
-      });
-      const d = await r.json() as { request?: { id: string } };
-      const id = d.request?.id;
-      if (!id) throw new Error("no request id");
-      // Poll for completion
-      const poll = setInterval(async () => {
-        try {
-          const rr = await fetch(`/api/hermes/requests/${id}`);
-          const dd = await rr.json();
-          const st = dd.request?.status;
-          if (st === "done" || st === "failed") {
-            clearInterval(poll);
-            const reply = st === "done" ? (dd.request?.result || "Done.") : `Error: ${dd.request?.error || "failed"}`;
-            setMsgs([...newMsgs, { role: "assistant", content: reply }]);
-            setLoading(false);
-          }
-        } catch { clearInterval(poll); setLoading(false); }
-      }, 2500);
-    } catch {
-      setMsgs([...newMsgs, { role: "assistant", content: "Sorry, something went wrong. Try again." }]);
-      setLoading(false);
-    }
-  }
-
-  const agentColor = roleColors[agent.id]?.split(" ")[0]?.replace("from-","text-")?.replace("/20","") || "text-[var(--text-3)]";
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div className="elevated w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: "1px solid var(--line)" }}>
-          <div className="text-2xl">{agent.emoji}</div>
-          <div>
-            <div className="text-[14px] font-semibold text-[var(--text)]">{agent.name}</div>
-            <div className="text-[12px] text-[var(--text-3)]">{agent.role}</div>
-          </div>
-          <button onClick={onClose} className="ml-auto text-[var(--text-3)] hover:text-[var(--text)] transition-colors text-xl leading-none">×</button>
-        </div>
         {/* Messages */}
-        <div className="h-80 overflow-y-auto p-4 space-y-3 flex flex-col" style={{ background: "var(--surface-1)" }}>
-          {msgs.length === 0 && (
-            <div className="flex-1 flex items-center justify-center">
-              <p className="text-[var(--text-3)] text-[13px] text-center">Ask {agent.name} anything.<br/>They&apos;re ready.</p>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {history.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 border border-[var(--line)]" style={{ backgroundColor: `${agent?.color}10` }}>
+                {agent && <agent.icon className="w-8 h-8" style={{ color: agent?.color }} />}
+              </div>
+              <h3 className="text-[14px] font-semibold text-[var(--text)] mb-1">Talk to {agent?.name}</h3>
+              <p className="text-[12px] text-[var(--text-3)] max-w-xs">{agent?.role} agent ready. Send a message to dispatch.</p>
             </div>
           )}
-          {msgs.map((m, i) => (
-            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className="max-w-[80%] rounded-[var(--r-md)] px-3.5 py-2 text-[13px] leading-relaxed"
-                style={m.role === "user"
-                  ? { background: "var(--surface-3)", color: "var(--text)" }
-                  : { background: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--text-2)" }}>
-                {m.role === "assistant" && <span className="text-xs mr-1">{agent.emoji}</span>}
-                {m.content}
+          {history.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-[13px] ${msg.role === 'user' ? 'bg-[var(--accent)] text-black rounded-br-md' : 'bg-[var(--surface-2)] border border-[var(--line)] text-[var(--text)] rounded-bl-md'}`}>
+                {msg.content}
               </div>
             </div>
           ))}
-          {loading && (
+          {sending && (
             <div className="flex justify-start">
-              <div className="rounded-[var(--r-md)] px-3.5 py-2" style={{ background: "var(--surface-2)", border: "1px solid var(--line)" }}>
-                <span className="text-[var(--text-3)] text-[13px]">{agent.emoji} thinking…</span>
+              <div className="flex items-center gap-2 bg-[var(--surface-2)] border border-[var(--line)] rounded-2xl rounded-bl-md px-4 py-3">
+                <Loader2 className="w-4 h-4 animate-spin text-[var(--accent)]" />
+                <span className="text-[12px] text-[var(--text-3)]">{agent?.name} thinking...</span>
               </div>
             </div>
           )}
-          <div ref={endRef} />
         </div>
+
         {/* Input */}
-        <div className="flex gap-2 p-3" style={{ borderTop: "1px solid var(--line)" }}>
-          <input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()}
-            placeholder={`Message ${agent.name}…`}
-            className="flex-1 rounded-full px-4 py-2 text-[13px] text-[var(--text)] focus:outline-none transition-colors"
-            style={{ background: "var(--surface-1)", border: "1px solid var(--line)" }}
-          />
-          <button
-            onClick={send}
-            disabled={!input.trim() || loading}
-            className="btn-primary px-4 py-2 text-[13px]"
-          >Send</button>
+        <div className="p-4 border-t border-[var(--line)]">
+          <div className="flex items-end gap-2">
+            <div className="flex-1 relative">
+              <textarea value={prompt} onChange={e => setPrompt(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendToAgent() } }}
+                placeholder={`Message ${agent?.name}...`}
+                rows={1}
+                className="w-full px-4 py-3 rounded-2xl text-[13px] text-[var(--text)] bg-[var(--surface-1)] border border-[var(--line)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 placeholder-[var(--text-3)] resize-none transition-all"
+                style={{ minHeight: '44px', maxHeight: '120px' }}
+              />
+            </div>
+            <button onClick={sendToAgent} disabled={!prompt.trim() || sending}
+              className="px-4 py-3 rounded-2xl text-[13px] font-semibold text-black hover:opacity-90 disabled:opacity-30 transition-all active:scale-95 shadow-lg shrink-0"
+              style={{ backgroundColor: agent?.color || '#00f0ff' }}>
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </div>
     </div>
-  );
-}
-
-export default function AgentsPage() {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
-  const [view, setView] = useState<"cards" | "office">("office");
-  const [chatAgent, setChatAgent] = useState<Agent | null>(null);
-
-  const loadAgents = useCallback(async () => {
-    try {
-      const res = await fetch("/api/agents");
-      const data = await res.json();
-      setAgents(Array.isArray(data) ? data : []);
-    } catch {}
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    loadAgents();
-    const interval = setInterval(loadAgents, 10000); // poll every 10s
-    return () => clearInterval(interval);
-  }, [loadAgents]);
-
-  if (loading) {
-    return (
-      <div className="relative min-h-screen p-8">
-        <div className="relative z-10 w-full mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[...Array(4)].map((_, i) => <div key={i} className="sk h-32 rounded-[var(--r-lg)]" />)}
-        </div>
-      </div>
-    );
-  }
-
-  const maxAgent = agents.find(a => a.id === "max");
-  const teamAgents = agents.filter(a => a.id !== "max");
-  const online = agents.filter(a => a.status !== "offline").length;
-  const working = agents.filter(a => a.status === "working").length;
-  const totalTasks = agents.reduce((sum, a) => sum + a.tasksCompleted, 0);
-
-  return (
-    <>
-      <div className="relative z-10 w-full mx-auto text-[var(--text)] p-8 pb-16 space-y-8">
-      {/* Header */}
-      <div className="hq-rise flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="eyebrow mb-2.5">Agent HQ</div>
-          <h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">Your AI Team</h1>
-          <p className="text-[13px] text-[var(--text-3)] mt-3">Working 24/7</p>
-        </div>
-        <div className="flex items-center gap-6">
-          {/* Stats */}
-          <div className="flex gap-7 text-center">
-            <div>
-              <div className="num text-[22px] font-semibold leading-none" style={{ color: "var(--up)" }}>{online}<span className="text-[var(--text-4)]">/{agents.length}</span></div>
-              <div className="eyebrow mt-1.5">Online</div>
-            </div>
-            <div>
-              <div className="num text-[22px] font-semibold leading-none" style={{ color: "var(--accent)" }}>{working}</div>
-              <div className="eyebrow mt-1.5">Working</div>
-            </div>
-            <div>
-              <div className="num text-[22px] font-semibold leading-none text-[var(--text)]">{totalTasks}</div>
-              <div className="eyebrow mt-1.5">Total Tasks</div>
-            </div>
-          </div>
-          {/* View toggle */}
-          <div className="flex rounded-full p-1 gap-1" style={{ border: "1px solid var(--line)" }}>
-            <button
-              onClick={() => setView("office")}
-              className={`px-3.5 py-1.5 rounded-full text-[12px] font-medium transition-colors ${
-                view === "office"
-                  ? "bg-white/[0.08] text-[var(--text)]"
-                  : "text-[var(--text-3)] hover:text-[var(--text-2)]"
-              }`}
-            >
-              Office
-            </button>
-            <button
-              onClick={() => setView("cards")}
-              className={`px-3.5 py-1.5 rounded-full text-[12px] font-medium transition-colors ${
-                view === "cards"
-                  ? "bg-white/[0.08] text-[var(--text)]"
-                  : "text-[var(--text-3)] hover:text-[var(--text-2)]"
-              }`}
-            >
-              Cards
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Live Agent Chat Modal */}
-      {chatAgent && <AgentChat agent={chatAgent} onClose={() => setChatAgent(null)} />}
-
-      {/* Office View */}
-      {view === "office" && (
-        <>
-          <OfficeView agents={agents} />
-          {/* Chat quick-launch strip */}
-          <div className="flex flex-wrap gap-2 pt-2">
-            {agents.filter(a => a.id !== "max").map(a => (
-              <button key={a.id} onClick={() => setChatAgent(a)}
-                className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[12px] text-[var(--text-2)] transition-colors panel-interactive"
-                style={{ background: "var(--surface-1)", border: "1px solid var(--line)" }}>
-                <span>{a.emoji}</span> Chat with {a.name}
-              </button>
-            ))}
-            {agents.find(a => a.id === "max") && (
-              <button onClick={() => setChatAgent(agents.find(a => a.id === "max")!)}
-                className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[12px] transition-colors"
-                style={{ color: "var(--accent)", background: "color-mix(in srgb, var(--accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 28%, transparent)" }}>
-                🐺 Chat with Max
-              </button>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* Cards View */}
-      {view === "cards" && (
-        <>
-          {/* Chief of Staff (Max) — full width */}
-          {maxAgent && (
-            <AgentCard
-              agent={maxAgent}
-              isExpanded={expandedAgent === maxAgent.id}
-              onToggle={() => setExpandedAgent(expandedAgent === maxAgent.id ? null : maxAgent.id)}
-            />
-          )}
-
-          {/* Team grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {teamAgents.map(agent => (
-              <AgentCard
-                key={agent.id}
-                agent={agent}
-                isExpanded={expandedAgent === agent.id}
-                onToggle={() => setExpandedAgent(expandedAgent === agent.id ? null : agent.id)}
-              />
-            ))}
-          </div>
-
-          {/* Org chart visual */}
-          <div className="pt-6" style={{ borderTop: "1px solid var(--line)" }}>
-            <div className="eyebrow mb-5">Team Structure</div>
-            <div className="flex flex-col items-center gap-2">
-              <div className="flex items-center gap-2.5 rounded-[var(--r-md)] px-4 py-2.5"
-                style={{ background: "color-mix(in srgb, var(--accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 24%, transparent)" }}>
-                <span className="text-xl">🐺</span>
-                <div>
-                  <div className="text-[13px] font-semibold text-[var(--text)]">Max</div>
-                  <div className="text-[10px] text-[var(--text-3)]">Chief of Staff · Orchestrator</div>
-                </div>
-              </div>
-              <div className="w-px h-6" style={{ background: "var(--line-strong)" }} />
-              <div className="flex items-center gap-0">
-                <div className="w-32 h-px" style={{ background: "var(--line-strong)" }} />
-                <div className="w-px h-4" style={{ background: "var(--line-strong)" }} />
-                <div className="w-32 h-px" style={{ background: "var(--line-strong)" }} />
-                <div className="w-px h-4" style={{ background: "var(--line-strong)" }} />
-                <div className="w-32 h-px" style={{ background: "var(--line-strong)" }} />
-              </div>
-              <div className="flex flex-wrap justify-center gap-3">
-                {teamAgents.map(agent => (
-                  <div key={agent.id} className="flex items-center gap-2.5 rounded-[var(--r-md)] px-3.5 py-2.5"
-                    style={{ background: "var(--surface-1)", border: "1px solid var(--line)", opacity: agent.status === "offline" ? 0.5 : 1 }}>
-                    <span className="text-lg">{agent.emoji}</span>
-                    <div>
-                      <div className="text-[12px] font-semibold text-[var(--text)]">{agent.name}</div>
-                      <div className="text-[10px] text-[var(--text-3)]">{agent.role}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-      </div>
-    </>
-  );
+  )
 }
