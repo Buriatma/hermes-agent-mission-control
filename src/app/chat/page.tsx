@@ -443,8 +443,8 @@ export default function ChatPage() {
       {/* ── Top Header ─────────────────────────────────────── */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--line)] shrink-0 bg-[var(--bg)] z-30 h-14">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <button onClick={() => window.history.back()} className="p-2 -ml-2 text-[var(--text-4)] md:hidden">
-            <ArrowLeft className="w-5 h-5" />
+          <button onClick={() => setSidebarOpen(true)} className="p-2 -ml-2 text-[var(--text-4)] md:hidden">
+            <PanelLeft className="w-5 h-5" />
           </button>
           <div className="w-8 h-8 rounded-full avatar-gradient-1 flex items-center justify-center text-[10px] font-bold text-black shrink-0">H</div>
           <div className="flex-1 min-w-0">
@@ -492,6 +492,43 @@ export default function ChatPage() {
       </div>
 
       {/* ── Main area: sidebar overlay + chat ────────────────── */}
+
+      {/* ── Sidebar (Mobile Overlay & Desktop persistent) ────────────────── */}
+      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
+      <div className={`fixed md:relative inset-y-0 left-0 z-50 w-72 md:w-64 border-r border-[var(--line)] bg-[var(--bg)] flex flex-col transition-transform duration-300 shrink-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div className="p-3 border-b border-[var(--line)] space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl avatar-gradient-1 flex items-center justify-center text-[11px] font-bold text-black">H</div>
+              <div>
+                <h1 className="text-[13px] font-bold text-[var(--text)]">GlyteOS</h1>
+                <p className="text-[9px] text-[var(--text-4)]">Hermes Mission Control</p>
+              </div>
+            </div>
+            <button onClick={() => setSidebarOpen(false)} className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] text-[var(--text-3)] md:hidden"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-4)]" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+              className="w-full pl-8 pr-3 py-2 rounded-lg bg-[var(--surface-1)] border border-[var(--line)] text-[12px] text-[var(--text)] placeholder-[var(--text-3)] focus:outline-none focus:border-[var(--accent)]" />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto overscroll-contain">
+          {pinned.length > 0 && renderGroup('Pinned', pinned)}
+          {renderGroup('Today', grp.today)}
+          {renderGroup('Yesterday', grp.yesterday)}
+          {renderGroup('This Week', grp.week)}
+          {renderGroup('This Month', grp.month)}
+          {renderGroup('Older', grp.older)}
+        </div>
+        <div className="p-2 border-t border-[var(--line)] flex items-center justify-between">
+          <button onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')} className="text-[10px] text-[var(--text-4)] hover:text-[var(--text-3)] px-2 py-1 rounded hover:bg-[var(--surface-2)]">
+            {sortOrder === 'desc' ? 'Oldest first' : 'Newest first'}
+          </button>
+          <span className="text-[9px] text-[var(--text-4)]">{sessions.length} chats</span>
+        </div>
+      </div>
+
       <div className="flex-1 relative flex overflow-hidden">
 
         {/* ── Chat Content ────────────────────────────────── */}
