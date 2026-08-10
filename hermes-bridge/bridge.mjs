@@ -406,7 +406,7 @@ async function mirrorFiles() {
           let content = null;
           if (!item.isDirectory() && stat.size < 50 * 1024) {
             try {
-              content = fs.readFileSync(full, "utf8");
+              content = fs.readFileSync(full).toString("utf-8").replace(/\uFFFD/g, "");
             } catch {}
           }
           entries.push({ name: item.name, path: rel, type: item.isDirectory() ? "dir" : "file", size: stat.size, updatedAt: stat.mtime.toISOString(), parent: (parentRel === "." || parentRel === "/") ? null : parentRel, content });
