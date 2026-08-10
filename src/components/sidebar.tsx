@@ -21,6 +21,7 @@ import {
   Settings,
   Menu,
   X,
+  Activity as ActivityIcon,
 } from "lucide-react";
 
 const navGroups = [
@@ -30,8 +31,11 @@ const navGroups = [
       { href: "/", label: "Dashboard", icon: Home },
       { href: "/chat", label: "Chat", icon: MessageSquare },
       { href: "/files", label: "Files", icon: FolderOpen },
-      { href: "/hermes", label: "Agent", icon: Cpu },
-      { href: "/tasks", label: "Tasks", icon: ClipboardList },
+      { href: "/hermes", label: "Agent Controls", icon: Cpu },
+      { href: "/hermes/skills", label: "Skills Manager", icon: BookOpen },
+      { href: "/hermes/crons", label: "Cron Scheduler", icon: ClipboardList },
+      { href: "/hermes/analytics", label: "Analytics", icon: ActivityIcon },
+      { href: "/tasks", label: "Tasks Kanban", icon: ClipboardList },
     ],
   },
   {
