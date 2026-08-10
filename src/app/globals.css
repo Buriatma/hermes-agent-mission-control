@@ -608,3 +608,41 @@ html.light {
 .markdown-body th { text-align: left; border: 1px solid var(--line); padding: 4px 8px; font-size: 12px; }
 .markdown-body td { border: 1px solid var(--line); padding: 4px 8px; font-size: 12px; }
 .markdown-body p { margin: 4px 0; }
+
+/* ── Jarvis OG HUD Overlay ─────────────────────────────── */
+body {
+  background-image: 
+    linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px);
+  background-size: 50px 50px;
+  position: relative;
+}
+
+body::after {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: 
+    radial-gradient(circle at center, transparent 30%, rgba(0, 240, 255, 0.03) 100%),
+    linear-gradient(to bottom, transparent 50%, rgba(0, 240, 255, 0.02) 50%);
+  background-size: 100% 100%, 100% 4px;
+  opacity: 0.4;
+}
+
+.panel {
+  @apply bg-black/40 backdrop-blur-xl border border-[var(--accent)]/20 shadow-[0_0_20px_rgba(0,240,255,0.1)];
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+}
+
+.btn-primary {
+  @apply bg-[var(--accent)]/10 border border-[var(--accent)] text-[var(--accent)] shadow-[0_0_15px_rgba(0,240,255,0.3)];
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.eyebrow {
+  @apply text-[var(--accent)] font-bold tracking-widest opacity-80;
+  text-shadow: 0 0 10px rgba(0,240,255,0.5);
+}
