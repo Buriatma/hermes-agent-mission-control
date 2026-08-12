@@ -35,6 +35,7 @@ const navGroups = [
       { href: "/hermes/skills", label: "Skills Manager", icon: BookOpen },
       { href: "/hermes/crons", label: "Cron Scheduler", icon: ClipboardList },
       { href: "/hermes/analytics", label: "Analytics", icon: ActivityIcon },
+      { href: "/jarvis", label: "J.A.R.V.I.S.", icon: Cpu },
       { href: "/tasks", label: "Tasks Kanban", icon: ClipboardList },
     ],
   },
