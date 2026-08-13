@@ -265,6 +265,14 @@ const SLASH_TO_CLI = {
   '/moa': ['moa'],
   '/bundles': ['skills', 'bundles'],
   '/profile': ['profile'],
+  '/new': ['chat', 'new'],
+  '/goal': ['goal'],
+  '/tools': ['tools', 'list'],
+  '/browser': ['browser'],
+  '/background': ['background'],
+  '/mission': ['mission'],
+  '/personality': ['personality'],
+  '/commands': ['commands'],
 };
 
 function parseSlashArgs(prompt) {

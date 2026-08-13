@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     const row = await prisma.agentRequest.create({
       data: {
         origin: "jarvis",
-        kind: "jarvis-run",
+        kind: "chat",
         title: message.slice(0, 200),
         prompt,
         sideEffecting: false,
