@@ -3,19 +3,23 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
   try {
-    const { message, command } = await req.json().catch(() => ({}));
-    if (!message && !command) {
-      return NextResponse.json({ error: "message or command required" }, { status: 400 });
-    }
+    const { message, fresh } = await req.json().catch(() => ({}));
+    if (!message) return NextResponse.json({ error: "message required" }, { status: 400 });
 
-    const title = (command || message || "").toString().slice(0, 200);
-    const prompt = (command ? `/jarvis ${command} ${message}` : message) || "";
+    const stateStore = await prisma.dataStore.findUnique({ where: { key: "jarvis-state" } });
+    const state = stateStore ? JSON.parse(stateStore.data as string) : {};
+    const parts: string[] = [];
+    if (state.personality) parts.push(`Tone: ${state.personality}`);
+    if (state.goal) parts.push(`Standing objective: ${state.goal}`);
+    if (state.profile?.length) parts.push(`Profile notes:\n${state.profile.slice(-10).join("\n")}`);
+    const systemContext = parts.length ? parts.join("\n\n") + "\n\n" : "";
+    const prompt = systemContext + message;
 
     const row = await prisma.agentRequest.create({
       data: {
         origin: "jarvis",
         kind: "jarvis-run",
-        title,
+        title: message.slice(0, 200),
         prompt,
         sideEffecting: false,
         model: "best-long-context",
@@ -23,7 +27,7 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json({ requestId: row.id, status: "queued", title });
+    return NextResponse.json({ requestId: row.id, status: "queued", session_id: null });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
