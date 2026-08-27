@@ -435,7 +435,7 @@ export default function ChatPage() {
     )
   }
 
-  const models = ['auto', 'gemini-flash', 'gemini-2.5-flash', 'claude-3.5-sonnet', 'gpt-4o', 'best-long-context', 'best-coding']
+  const models = ['auto', 'gemini-flash', 'gemini-2.5-flash', 'claude-3.5-sonnet', 'gpt-4o', 'best-long-context', 'best-coding', 'x-preview-f-free', 'hy3-free', 'laguna-s-2.1-free', 'nemotron-3-ultra-free', 'nemotron-3.5-lightning-free', 'muse-spark-1.2-contributor-free']
 
   return (
     <div className="h-full flex flex-col bg-[var(--bg)] overflow-hidden">
@@ -740,7 +740,7 @@ function CommandList({ onSelect, onClose }: { onSelect: (c: string) => void; onC
 // ─── Model Selector ────────────────────────────────────────────
 function ModelSelector({ current, onChange }: { current: string | null; onChange: (m: string) => void }) {
   const [open, setOpen] = useState(false)
-  const models = ['auto', 'gemini-flash', 'gemini-2.5-flash', 'claude-3.5-sonnet', 'gpt-4o', 'best-long-context', 'best-coding']
+  const models = ['auto', 'gemini-flash', 'gemini-2.5-flash', 'claude-3.5-sonnet', 'gpt-4o', 'best-long-context', 'best-coding', 'x-preview-f-free', 'hy3-free', 'laguna-s-2.1-free', 'nemotron-3-ultra-free', 'nemotron-3.5-lightning-free', 'muse-spark-1.2-contributor-free']
   return (
     <div className="relative">
       <button onClick={() => setOpen(!open)} className="text-[11px] px-2.5 py-1.5 rounded-full bg-[var(--surface-2)] border border-[var(--line)] text-[var(--text-3)] hover:text-[var(--accent)] hover:border-[var(--accent)]/50 transition-all flex items-center gap-1">
